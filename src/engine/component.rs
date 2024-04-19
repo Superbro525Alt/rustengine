@@ -63,5 +63,5 @@ where
     F: FnOnce(&mut Component) -> T,
 {
     let mut comp = object.lock().unwrap();
-    f(&mut *comp)
+    f(&mut comp)
 }

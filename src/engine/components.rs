@@ -1,8 +1,6 @@
 use crate::engine::component;
 use std::sync::{Arc, Mutex};
 
-pub type input = Input;
-
 pub struct Input {
     name: String,
     state: component::ComponentState,

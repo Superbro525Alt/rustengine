@@ -48,7 +48,7 @@ impl GameObjectState {
     }
 
     pub fn parent(&self) -> Option<Arc<Mutex<GameObject>>> {
-        self.parent_id.and_then(|id| GameObject::find_by_id(id))
+        self.parent_id.and_then(GameObject::find_by_id)
     }
 
     pub fn children(&self) -> Vec<Arc<Mutex<GameObject>>> {
@@ -168,7 +168,7 @@ where
     F: FnOnce(&mut GameObject) -> T,
 {
     let mut game_object = object.lock().unwrap();
-    f(&mut *game_object)
+    f(&mut game_object)
 }
 
 pub fn to_object<F, T>(object: i32, f: F) -> T
@@ -184,7 +184,7 @@ pub fn _internal_to_object<T, F: FnOnce(&GameObject) -> T>(obj_id: i32, func: F)
     let game_objects = GAME_OBJECT_REGISTRY.lock().unwrap();
     if let Some(obj) = game_objects.get(&obj_id) {
         let obj = obj.lock().unwrap();
-        return Some(func(&*obj));
+        return Some(func(&obj));
     }
     None
 }
