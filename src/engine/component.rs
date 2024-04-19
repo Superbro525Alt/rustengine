@@ -26,6 +26,9 @@ pub trait ComponentTrait: Send + Sync + Any {
     fn type_id(&self) -> TypeId {
         TypeId::of::<Self>()
     }
+    fn as_any(&self) -> &(dyn Any + '_) {  // Explicitly tying the lifetime of the returned reference to `self`
+        self
+    }
 }
 
 pub struct Component {

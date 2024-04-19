@@ -187,13 +187,19 @@ pub fn add_component(object: i32, comp: Arc<Mutex<dyn component::ComponentTrait>
 
 
 pub fn has_component<T: component::ComponentTrait + 'static>(obj_id: i32) -> bool {
-    let game_objects_lock = GAME_OBJECT_REGISTRY.lock().unwrap();  // Lock the registry
-    if let Some(obj_arc) = game_objects_lock.get(&obj_id) {
-        let game_object_lock = obj_arc.lock().unwrap();  // Lock the GameObject
-        return game_object_lock.components().iter().any(|comp_mutex| {
-            let comp = comp_mutex.lock().unwrap();  // Lock the component
-            comp.type_id() == TypeId::of::<T>()  // Check the type ID
-        });
+    let game_objects = GAME_OBJECT_REGISTRY.lock().unwrap();
+    if let Some(obj_arc) = game_objects.get(&obj_id) {
+        // Scope for the GameObject lock
+        let has_component = {
+            let game_object = obj_arc.lock().unwrap();
+            game_object.components().iter().any(|comp_mutex| {
+                // Scope for the Component lock
+                let comp = comp_mutex.lock().unwrap();
+                // Properly check the type using TypeId
+                TypeId::of::<T>() == comp.as_any().type_id()
+            })
+        };
+        return has_component;
     }
-    false  // Return false if the GameObject was not found
+    false
 }
