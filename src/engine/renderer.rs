@@ -1,15 +1,11 @@
 use crate::engine::camera;
 
-pub struct Renderer {
-
-}
+pub struct Renderer {}
 
 impl Renderer {
     pub fn new() -> Self {
-        Self { }
+        Self {}
     }
 
-    pub fn tick(&mut self, cam: &camera::Camera) {
-        
-    }
+    pub fn tick(&mut self, _cam: &camera::Camera) {}
 }

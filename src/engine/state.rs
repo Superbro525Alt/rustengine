@@ -1,5 +1,5 @@
-use crate::engine::gameobject;
 use crate::engine::camera;
+use crate::engine::gameobject;
 use crate::engine::renderer;
 
 pub struct State {
@@ -10,7 +10,7 @@ impl State {
     pub fn new() -> Self {
         Self { objects: vec![] }
     }
-    
+
     pub fn objects(&mut self) -> &Vec<i32> {
         &self.objects
     }
@@ -23,12 +23,16 @@ impl State {
 pub struct Engine {
     state: State,
     camera: camera::Camera,
-    renderer: renderer::Renderer
+    renderer: renderer::Renderer,
 }
 
 impl Engine {
     pub fn new() -> Self {
-        Self { state: State::new(), camera: camera::Camera::new(), renderer: renderer::Renderer::new() }
+        Self {
+            state: State::new(),
+            camera: camera::Camera::new(),
+            renderer: renderer::Renderer::new(),
+        }
     }
     pub fn state(&mut self) -> &State {
         &self.state
@@ -55,7 +59,7 @@ impl Engine {
         self.camera.tick();
     }
 
-    pub fn add_object(&mut self, obj: gameobject::game_object) -> i32 {
+    pub fn add_object(&mut self, obj: gameobject::MutexdGameObject) -> i32 {
         let id = obj.clone().lock().unwrap().id();
         self.state.add_object(id);
         id

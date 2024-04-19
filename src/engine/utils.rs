@@ -6,7 +6,5 @@ macro_rules! assert_is_type {
                 let _: $ti = v.$i;
             }
         };
-    }
+    };
 }
-
-pub(crate) use assert_is_type;

@@ -1,6 +1,6 @@
-use std::sync::{Arc, Mutex};
-use std::any::{Any, TypeId};
 use serde_json::Value;
+use std::any::TypeId;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 pub struct ComponentState {
@@ -9,7 +9,9 @@ pub struct ComponentState {
 
 impl ComponentState {
     pub fn new() -> Self {
-        Self { _state: Value::Null }
+        Self {
+            _state: Value::Null,
+        }
     }
     pub fn get(&self) -> Value {
         self._state.clone()
@@ -19,15 +21,15 @@ impl ComponentState {
     }
 }
 
-pub trait ComponentTrait: Send + Sync + Any {
+pub trait ComponentTrait: Send + Sync
+where
+    Self: 'static,
+{
     fn tick(&mut self);
     fn name(&self) -> &str;
     fn state(&mut self) -> &mut ComponentState;
     fn type_id(&self) -> TypeId {
         TypeId::of::<Self>()
-    }
-    fn as_any(&self) -> &(dyn Any + '_) {  // Explicitly tying the lifetime of the returned reference to `self`
-        self
     }
 }
 
@@ -49,7 +51,7 @@ impl ComponentTrait for Component {
     }
 }
 
-pub fn create_component(name: String, deps: Vec<Arc<Mutex<dyn ComponentTrait>>>) -> Component {
+pub fn create_component(name: String, _deps: Vec<Arc<Mutex<dyn ComponentTrait>>>) -> Component {
     Component {
         name,
         state: ComponentState::new(),
@@ -58,9 +60,8 @@ pub fn create_component(name: String, deps: Vec<Arc<Mutex<dyn ComponentTrait>>>)
 
 pub fn to_component<F, T>(object: Arc<Mutex<Component>>, f: F) -> T
 where
-    F: FnOnce(&mut Component) -> T, 
+    F: FnOnce(&mut Component) -> T,
 {
-    let mut comp = object.lock().unwrap();  
-    f(&mut *comp)  
+    let mut comp = object.lock().unwrap();
+    f(&mut *comp)
 }
-
