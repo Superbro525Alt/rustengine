@@ -1,20 +1,20 @@
 use crate::engine::component;
-use crate::engine::utils;
 use lazy_static::lazy_static;
+use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::any::{TypeId, type_name, Any};
 
-pub type game_object = Arc<Mutex<GameObject>>;
+pub type MutexdGameObject = Arc<Mutex<GameObject>>;
 
 lazy_static! {
-    pub static ref GAME_OBJECT_REGISTRY: Mutex<HashMap<i32, Arc<Mutex<GameObject>>>> = Mutex::new(HashMap::new());
+    pub static ref GAME_OBJECT_REGISTRY: Mutex<HashMap<i32, Arc<Mutex<GameObject>>>> =
+        Mutex::new(HashMap::new());
     static ref GAME_OBJECT_COUNT: Mutex<Count> = Mutex::new(Count::new());
 }
 
 #[derive(Clone)]
 struct Count {
-    internal: i32
+    internal: i32,
 }
 
 impl Count {
@@ -40,15 +40,22 @@ pub struct GameObjectState {
 
 impl GameObjectState {
     pub fn new(active: bool, parent_id: Option<i32>, child_ids: Vec<i32>) -> Self {
-        Self { active, parent_id, child_ids }
+        Self {
+            active,
+            parent_id,
+            child_ids,
+        }
     }
 
     pub fn parent(&self) -> Option<Arc<Mutex<GameObject>>> {
-        self.parent_id.and_then(|id| GameObject::find_by_id(id))
+        self.parent_id.and_then(GameObject::find_by_id)
     }
 
     pub fn children(&self) -> Vec<Arc<Mutex<GameObject>>> {
-        self.child_ids.iter().filter_map(|&id| GameObject::find_by_id(id)).collect()
+        self.child_ids
+            .iter()
+            .filter_map(|&id| GameObject::find_by_id(id))
+            .collect()
     }
 
     pub fn active(&self) -> bool {
@@ -75,11 +82,23 @@ pub struct GameObject {
 }
 
 impl GameObject {
-    pub fn new(name: String, components: Vec<Arc<Mutex<dyn component::ComponentTrait>>>, state: GameObjectState) -> Arc<Mutex<Self>> {
+    pub fn new(
+        name: String,
+        components: Vec<Arc<Mutex<dyn component::ComponentTrait>>>,
+        state: GameObjectState,
+    ) -> Arc<Mutex<Self>> {
         let id = GAME_OBJECT_COUNT.lock().unwrap().get();
         // let id = *_id;
-        let game_object = Arc::new(Mutex::new(Self { name, id, components, state }));
-        GAME_OBJECT_REGISTRY.lock().unwrap().insert(id, game_object.clone());
+        let game_object = Arc::new(Mutex::new(Self {
+            name,
+            id,
+            components,
+            state,
+        }));
+        GAME_OBJECT_REGISTRY
+            .lock()
+            .unwrap()
+            .insert(id, game_object.clone());
         GAME_OBJECT_COUNT.lock().unwrap().increment();
         game_object
     }
@@ -130,20 +149,13 @@ impl GameObject {
 }
 
 pub fn make_base_game_object(name: String) -> Arc<Mutex<GameObject>> {
-    GameObject::new(
-        name,
-        vec![],
-        GameObjectState::new(
-            true,
-            None,
-            vec![]
-        )
-    )
+    GameObject::new(name, vec![], GameObjectState::new(true, None, vec![]))
 }
 
 pub fn reparent(parent_id: i32, child_id: i32) {
-    let mut registry = GAME_OBJECT_REGISTRY.lock().unwrap();
-    if let (Some(parent_arc), Some(child_arc)) = (registry.get(&parent_id), registry.get(&child_id)) {
+    let registry = GAME_OBJECT_REGISTRY.lock().unwrap();
+    if let (Some(parent_arc), Some(child_arc)) = (registry.get(&parent_id), registry.get(&child_id))
+    {
         let mut parent = parent_arc.lock().unwrap();
         let mut child = child_arc.lock().unwrap();
         child.state.set_parent(parent_id);
@@ -153,38 +165,35 @@ pub fn reparent(parent_id: i32, child_id: i32) {
 
 pub fn safe_to_object<F, T>(object: Arc<Mutex<GameObject>>, f: F) -> T
 where
-    F: FnOnce(&mut GameObject) -> T, 
+    F: FnOnce(&mut GameObject) -> T,
 {
-    let mut game_object = object.lock().unwrap();  
-    f(&mut *game_object)  
+    let mut game_object = object.lock().unwrap();
+    f(&mut game_object)
 }
 
 pub fn to_object<F, T>(object: i32, f: F) -> T
 where
-    F: FnOnce(&mut GameObject) -> T, 
+    F: FnOnce(&mut GameObject) -> T,
 {
-    let mut game_object = GameObject::find_by_id(object).expect("Nothing found");
+    let game_object = GameObject::find_by_id(object).expect("Nothing found");
     let mut g = game_object.lock().unwrap();
-    f(&mut g)  
+    f(&mut g)
 }
 
 pub fn _internal_to_object<T, F: FnOnce(&GameObject) -> T>(obj_id: i32, func: F) -> Option<T> {
     let game_objects = GAME_OBJECT_REGISTRY.lock().unwrap();
     if let Some(obj) = game_objects.get(&obj_id) {
         let obj = obj.lock().unwrap();
-        return Some(func(&*obj));
+        return Some(func(&obj));
     }
     None
 }
-
-
 
 pub fn add_component(object: i32, comp: Arc<Mutex<dyn component::ComponentTrait>>) {
     to_object(object, |obj| {
         obj.add_component(comp);
     })
 }
-
 
 pub fn has_component<T: component::ComponentTrait + 'static>(obj_id: i32) -> bool {
     let game_objects = GAME_OBJECT_REGISTRY.lock().unwrap();
@@ -196,7 +205,7 @@ pub fn has_component<T: component::ComponentTrait + 'static>(obj_id: i32) -> boo
                 // Scope for the Component lock
                 let comp = comp_mutex.lock().unwrap();
                 // Properly check the type using TypeId
-                TypeId::of::<T>() == comp.as_any().type_id()
+                TypeId::of::<T>() == comp.type_id()
             })
         };
         return has_component;

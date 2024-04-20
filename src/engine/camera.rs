@@ -1,13 +1,9 @@
-pub struct Camera {
-
-}
+pub struct Camera {}
 
 impl Camera {
     pub fn new() -> Self {
-        Self { }
+        Self {}
     }
 
-    pub fn tick(&mut self) {
-
-    }
+    pub fn tick(&mut self) {}
 }
