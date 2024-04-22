@@ -18,9 +18,17 @@ fn main() {
     );
 
     engine::gameobject::add_component(
-        g1,
+        g2,
         engine::components::make_safe(engine::components::Input::new()),
     );
 
-    e.tick();
+    engine::gameobject::to_object(g1, |obj| {
+        let op = obj.get_component::<engine::components::Input>();
+        if op.is_some() {
+            let arc = op.unwrap();
+            println!("{}", arc.lock().unwrap().name()); 
+        }
+    })
+
+    // e.tick();
 }

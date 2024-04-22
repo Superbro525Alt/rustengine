@@ -1,7 +1,9 @@
 use crate::engine::component;
+use colored::Colorize;
 use lazy_static::lazy_static;
 use std::any::TypeId;
 use std::collections::HashMap;
+use std::process::exit;
 use std::sync::{Arc, Mutex};
 
 pub type MutexdGameObject = Arc<Mutex<GameObject>>;
@@ -127,6 +129,18 @@ impl GameObject {
         self.components.push(component);
     }
 
+    pub fn get_component<T: component::ComponentTrait + 'static>(&self) -> Option<&Arc<Mutex<dyn component::ComponentTrait>>> {
+        self.components
+            .iter()
+            .find(|comp| {
+                let comp = comp.lock().unwrap();
+                TypeId::of::<T>() == comp.type_id()
+            })
+            .map(|comp| {
+                comp 
+            })
+    }
+
     pub fn tick_self(&self) {
         for component in &self.components {
             let mut comp = component.lock().unwrap();
@@ -190,25 +204,68 @@ pub fn _internal_to_object<T, F: FnOnce(&GameObject) -> T>(obj_id: i32, func: F)
 }
 
 pub fn add_component(object: i32, comp: Arc<Mutex<dyn component::ComponentTrait>>) {
-    to_object(object, |obj| {
-        obj.add_component(comp);
-    })
+    let comp_type_id = {
+        let comp_lock = comp.lock().unwrap();
+        comp_lock.type_id() // Get the TypeId of the component type directly
+    };
+
+    let already_exists = to_object(object, |obj| {
+        obj.components().iter().any(|existing_comp| {
+            let existing_comp_lock = existing_comp.lock().unwrap();
+            existing_comp_lock.type_id() == comp_type_id // Compare TypeIds
+        })
+    });
+
+    if already_exists {
+        let comp_name = {
+            let comp_lock = comp.lock().unwrap();
+            comp_lock.name().to_string() // Get the name of the component
+        };
+        let game_object_name = {
+            /*let game_object = */
+            GameObject::find_by_id(object)
+                .unwrap()
+                .lock()
+                .unwrap()
+                .name()
+                .to_string()
+            // game_object.name().to_string()  // Get the name of the GameObject
+        };
+        let text = format!(
+            "GameObject {} already has component {}",
+            game_object_name, comp_name
+        );
+        text.red();
+        eprintln!("ERROR: {}", text);
+        exit(1); // Exit the program with a status code of 1
+    } else {
+        // Proceed to add the component if it does not exist
+        to_object(object, |obj| {
+            obj.add_component(comp);
+        });
+    }
 }
 
 pub fn has_component<T: component::ComponentTrait + 'static>(obj_id: i32) -> bool {
     let game_objects = GAME_OBJECT_REGISTRY.lock().unwrap();
     if let Some(obj_arc) = game_objects.get(&obj_id) {
-        // Scope for the GameObject lock
         let has_component = {
             let game_object = obj_arc.lock().unwrap();
             game_object.components().iter().any(|comp_mutex| {
-                // Scope for the Component lock
                 let comp = comp_mutex.lock().unwrap();
-                // Properly check the type using TypeId
                 TypeId::of::<T>() == comp.type_id()
             })
         };
         return has_component;
     }
     false
+}
+
+pub fn get_component<T: component::ComponentTrait + 'static>(obj_id: i32) -> Option<T> {
+    if has_component::<T>(obj_id) {
+        to_object(obj_id, |obj| {
+
+        })
+    }
+    None
 }
