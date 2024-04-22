@@ -144,7 +144,8 @@ impl GameObject {
         self.components.iter().find_map(|comp| {
             let mut comp_lock = comp.lock().unwrap();
             if let Some(mut casted_comp) = comp_lock.as_any_mut().downcast_mut::<T>() {
-                Some(f(&mut casted_comp))
+                f(casted_comp);
+                Some(())
             } else {
                 None
             }
