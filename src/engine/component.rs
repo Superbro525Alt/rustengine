@@ -1,8 +1,8 @@
-use serde_json::Value;
-use std::sync::{Arc, Mutex};
-use std::any::{self, Any, TypeId};
 use downcast_rs::impl_downcast;
 use downcast_rs::Downcast;
+use serde_json::Value;
+use std::any::{self, Any, TypeId};
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 pub struct ComponentState {
@@ -23,17 +23,19 @@ impl ComponentState {
     }
 }
 
-pub trait ComponentTrait: Send + Sync
+pub trait ComponentTrait: Send + Sync + Downcast
 where
     Self: 'static,
 {
     fn tick(&mut self);
     fn name(&self) -> &str;
     fn state(&mut self) -> &mut ComponentState;
-    fn type_id(&self) -> TypeId {
-        TypeId::of::<Self>()
-    }
+    // fn type_id(&self) -> TypeId {
+    // TypeId::of::<Self>()
+    // }
 }
+
+impl_downcast!(ComponentTrait);
 
 pub struct Component {
     name: String,

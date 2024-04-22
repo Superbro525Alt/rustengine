@@ -106,7 +106,15 @@ impl GameObject {
     }
 
     pub fn find_by_id(id: i32) -> Option<Arc<Mutex<Self>>> {
-        GAME_OBJECT_REGISTRY.lock().unwrap().get(&id).cloned()
+        let obj = GAME_OBJECT_REGISTRY.lock().unwrap().get(&id).cloned();
+
+        if obj.is_some() {
+            obj
+        } else {
+            let text = format!("No object with id {}", id);
+            eprintln!("ERROR: {}", text);
+            exit(1);
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -129,16 +137,18 @@ impl GameObject {
         self.components.push(component);
     }
 
-    pub fn get_component<T: component::ComponentTrait + 'static>(&self) -> Option<&Arc<Mutex<dyn component::ComponentTrait>>> {
-        self.components
-            .iter()
-            .find(|comp| {
-                let comp = comp.lock().unwrap();
-                TypeId::of::<T>() == comp.type_id()
-            })
-            .map(|comp| {
-                comp 
-            })
+    pub fn get_component<T: component::ComponentTrait + 'static, F>(&self, mut f: F)
+    where
+        F: FnMut(&mut T),
+    {
+        self.components.iter().find_map(|comp| {
+            let mut comp_lock = comp.lock().unwrap();
+            if let Some(mut casted_comp) = comp_lock.as_any_mut().downcast_mut::<T>() {
+                Some(f(&mut casted_comp))
+            } else {
+                None
+            }
+        });
     }
 
     pub fn tick_self(&self) {
@@ -206,20 +216,20 @@ pub fn _internal_to_object<T, F: FnOnce(&GameObject) -> T>(obj_id: i32, func: F)
 pub fn add_component(object: i32, comp: Arc<Mutex<dyn component::ComponentTrait>>) {
     let comp_type_id = {
         let comp_lock = comp.lock().unwrap();
-        comp_lock.type_id() // Get the TypeId of the component type directly
+        comp_lock.type_id()
     };
 
     let already_exists = to_object(object, |obj| {
         obj.components().iter().any(|existing_comp| {
             let existing_comp_lock = existing_comp.lock().unwrap();
-            existing_comp_lock.type_id() == comp_type_id // Compare TypeIds
+            existing_comp_lock.type_id() == comp_type_id
         })
     });
 
     if already_exists {
         let comp_name = {
             let comp_lock = comp.lock().unwrap();
-            comp_lock.name().to_string() // Get the name of the component
+            comp_lock.name().to_string()
         };
         let game_object_name = {
             /*let game_object = */
@@ -229,17 +239,14 @@ pub fn add_component(object: i32, comp: Arc<Mutex<dyn component::ComponentTrait>
                 .unwrap()
                 .name()
                 .to_string()
-            // game_object.name().to_string()  // Get the name of the GameObject
         };
         let text = format!(
             "GameObject {} already has component {}",
             game_object_name, comp_name
         );
-        text.red();
         eprintln!("ERROR: {}", text);
-        exit(1); // Exit the program with a status code of 1
+        exit(1);
     } else {
-        // Proceed to add the component if it does not exist
         to_object(object, |obj| {
             obj.add_component(comp);
         });
@@ -258,14 +265,29 @@ pub fn has_component<T: component::ComponentTrait + 'static>(obj_id: i32) -> boo
         };
         return has_component;
     }
+
+    if game_objects.get(&obj_id).is_none() {
+        let text = format!("No object with id {}", obj_id);
+        eprintln!("ERROR: {}", text);
+        exit(1);
+    }
     false
 }
 
-pub fn get_component<T: component::ComponentTrait + 'static>(obj_id: i32) -> Option<T> {
+pub fn get_component<T: component::ComponentTrait + 'static, F>(obj_id: i32, f: F)
+where
+    F: FnMut(&mut T),
+{
     if has_component::<T>(obj_id) {
         to_object(obj_id, |obj| {
-
+            obj.get_component::<T, _>(f);
         })
+    } else {
+        let text = format!(
+            "The object with id {} has does not contain the requested component",
+            obj_id
+        );
+        eprintln!("ERROR: {}", text);
+        exit(1);
     }
-    None
 }

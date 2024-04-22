@@ -1,4 +1,5 @@
 mod engine;
+use crate::engine::component::ComponentTrait;
 
 fn main() {
     let mut e = engine::state::Engine::new();
@@ -22,12 +23,8 @@ fn main() {
         engine::components::make_safe(engine::components::Input::new()),
     );
 
-    engine::gameobject::to_object(g1, |obj| {
-        let op = obj.get_component::<engine::components::Input>();
-        if op.is_some() {
-            let arc = op.unwrap();
-            println!("{}", arc.lock().unwrap().name()); 
-        }
+    engine::gameobject::get_component::<engine::components::Input, _>(1, |comp| {
+        println!("{}", comp.name());
     })
 
     // e.tick();
