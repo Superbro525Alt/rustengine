@@ -21,19 +21,20 @@ impl State {
 }
 
 pub struct Engine {
-    state: State,
-    camera: camera::Camera,
-    renderer: renderer::Renderer,
+    pub state: State,
+    pub camera: camera::Camera,
+    pub renderer: renderer::Renderer,
 }
 
 impl Engine {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
         Self {
             state: State::new(),
             camera: camera::Camera::new(),
-            renderer: renderer::Renderer::new(),
+            renderer: renderer::Renderer::new(String::from("Engine"), 800, 600).await,
         }
     }
+
     pub fn state(&mut self) -> &State {
         &self.state
     }
@@ -46,7 +47,7 @@ impl Engine {
         &self.renderer
     }
 
-    pub fn tick(&mut self) {
+    pub fn tick(mut self) {
         for obj in self.state.objects.iter() {
             gameobject::to_object(*obj, |game_object| {
                 if game_object.state.parent_id.is_none() {
@@ -55,7 +56,7 @@ impl Engine {
             });
         }
 
-        self.renderer.tick(&self.camera);
+        // self.renderer.tick(&self.camera, &self.state.objects);
         self.camera.tick();
     }
 
