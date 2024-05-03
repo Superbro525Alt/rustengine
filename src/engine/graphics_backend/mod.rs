@@ -27,7 +27,7 @@ pub struct State {
     pub window: Arc<Mutex<Window>>,
     pub render_pipeline: wgpu::RenderPipeline,
     meshes: Vec<Mesh>,
-    bg: [f32; 3]
+    bg: [f32; 3],
 }
 
 pub trait Backend {
@@ -177,7 +177,7 @@ impl Backend for State {
             render_pipeline,
             window,
             meshes: Vec::new(),
-            bg: [0.0, 0.0, 0.0]
+            bg: [0.0, 0.0, 0.0],
         }
     }
 

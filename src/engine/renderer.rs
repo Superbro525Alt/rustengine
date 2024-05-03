@@ -7,8 +7,8 @@ use winit::{
 use std::sync::{Arc, Mutex};
 
 use crate::engine::graphics_backend::{vertex::Vertex, Backend, State};
-use wgpu;
 use rand::Rng;
+use wgpu;
 
 pub struct Renderer {
     pub title: String,
@@ -29,7 +29,7 @@ impl Renderer {
             event_loop: None,
             window: None,
             backend: None,
-            active: false
+            active: false,
         }
     }
 
@@ -91,7 +91,14 @@ impl Renderer {
                     }
                 }
                 Event::RedrawRequested(window_id) if window_id == window.lock().unwrap().id() => {
-                    state.update(vec![], [rng.gen_range::<f32, _>(0.0..1.0), rng.gen_range::<f32, _>(0.0..1.0), rng.gen_range::<f32, _>(0.0..1.0)]);
+                    state.update(
+                        vec![],
+                        [
+                            rng.gen_range::<f32, _>(0.0..1.0),
+                            rng.gen_range::<f32, _>(0.0..1.0),
+                            rng.gen_range::<f32, _>(0.0..1.0),
+                        ],
+                    );
                     match state.render() {
                         Ok(_) => {}
                         // Reconfigure the surface if it's lost or outdated
