@@ -30,9 +30,6 @@ where
     fn tick(&mut self);
     fn name(&self) -> &str;
     fn state(&mut self) -> &mut ComponentState;
-    // fn type_id(&self) -> TypeId {
-    // TypeId::of::<Self>()
-    // }
 }
 
 impl_downcast!(ComponentTrait);
