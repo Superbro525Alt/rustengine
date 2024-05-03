@@ -1,6 +1,6 @@
 use bytemuck_derive::{Pod, Zeroable};
-use wgpu;
 use downcast_rs::impl_downcast;
+use wgpu;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
@@ -11,21 +11,18 @@ pub struct Vertex {
 
 pub struct Vec2d {
     x: f32,
-    y: f32
+    y: f32,
 }
 
 pub struct Vec3d {
     x: f32,
     y: f32,
-    z: f32
+    z: f32,
 }
 
 impl Vec2d {
     pub fn new(x: f32, y: f32) -> Self {
-        Self {
-            x,
-            y,
-        }
+        Self { x, y }
     }
 
     pub fn to_v3(&mut self, mut z: Option<f32>) -> Vec3d {
@@ -39,11 +36,7 @@ impl Vec2d {
 
 impl Vec3d {
     pub fn new(x: f32, y: f32, z: f32) -> Self {
-        Self {
-            x,
-            y,
-            z,
-        }
+        Self { x, y, z }
     }
 
     pub fn to_v2(&mut self) -> Vec2d {

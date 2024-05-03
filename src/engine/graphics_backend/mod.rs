@@ -3,20 +3,17 @@ use std::iter;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 use wgpu;
+use wgpu::util::DeviceExt;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
-use wgpu::util::DeviceExt;
 
-pub mod vertex;
 pub mod mesh;
-use crate::engine::graphics_backend::vertex::{Vertex};
-use crate::engine::graphics_backend::mesh::{Mesh};
-
-
-
+pub mod vertex;
+use crate::engine::graphics_backend::mesh::Mesh;
+use crate::engine::graphics_backend::vertex::Vertex;
 
 // #[cfg(target_arch = "wasm32")]
 // use wasm_bindgen::prelude::*;
@@ -89,11 +86,11 @@ impl Backend for State {
                     // WebGL doesn't support all of wgpu's features, so if
                     // we're building for the web we'll have to disable some.
                     // limits: if cfg!(target_arch = "wasm32") {
-                        // wgpu::Limits::downlevel_webgl2_defaults()
+                    // wgpu::Limits::downlevel_webgl2_defaults()
                     // } else {
-                        // wgpu::Limits::default()
+                    // wgpu::Limits::default()
                     // },
-                    limits: adapter.limits()
+                    limits: adapter.limits(),
                 },
                 // Some(&std::path::Path::new("trace")), // Trace path
                 None,
@@ -178,7 +175,7 @@ impl Backend for State {
             size,
             render_pipeline,
             window,
-            meshes: Vec::new()
+            meshes: Vec::new(),
         }
     }
 
@@ -196,31 +193,42 @@ impl Backend for State {
     }
 
     fn update(&mut self, new_mesh_data: Vec<(Vec<Vertex>, Vec<u16>)>) {
-        self.meshes = new_mesh_data.into_iter().map(|(vertices, indices)| {
-            let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(&vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-            let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(&indices),
-                usage: wgpu::BufferUsages::INDEX,
-            });
-            Mesh {
-                vertex_buffer,
-                index_buffer,
-                num_indices: indices.len() as u32,
-            }
-        }).collect();
+        self.meshes = new_mesh_data
+            .into_iter()
+            .map(|(vertices, indices)| {
+                let vertex_buffer =
+                    self.device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("Vertex Buffer"),
+                            contents: bytemuck::cast_slice(&vertices),
+                            usage: wgpu::BufferUsages::VERTEX,
+                        });
+                let index_buffer =
+                    self.device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("Index Buffer"),
+                            contents: bytemuck::cast_slice(&indices),
+                            usage: wgpu::BufferUsages::INDEX,
+                        });
+                Mesh {
+                    vertex_buffer,
+                    index_buffer,
+                    num_indices: indices.len() as u32,
+                }
+            })
+            .collect();
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder"),
-        });
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -246,7 +254,8 @@ impl Backend for State {
             for mesh in &self.meshes {
                 render_pass.set_pipeline(&self.render_pipeline);
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass
+                    .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                 render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
             }
         }
