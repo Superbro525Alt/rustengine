@@ -27,13 +27,14 @@ pub struct State {
     pub window: Arc<Mutex<Window>>,
     pub render_pipeline: wgpu::RenderPipeline,
     meshes: Vec<Mesh>,
+    bg: [f32; 3]
 }
 
 pub trait Backend {
     async fn new(window: Arc<Mutex<Window>>) -> Self;
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>);
     fn input(&mut self, event: &WindowEvent) -> bool;
-    fn update(&mut self, new_mesh_data: Vec<(Vec<Vertex>, Vec<u16>)>);
+    fn update(&mut self, new_mesh_data: Vec<(Vec<Vertex>, Vec<u16>)>, bg: [f32; 3]);
     fn render(&mut self) -> Result<(), wgpu::SurfaceError>;
 }
 
@@ -176,6 +177,7 @@ impl Backend for State {
             render_pipeline,
             window,
             meshes: Vec::new(),
+            bg: [0.0, 0.0, 0.0]
         }
     }
 
@@ -192,7 +194,7 @@ impl Backend for State {
         false
     }
 
-    fn update(&mut self, new_mesh_data: Vec<(Vec<Vertex>, Vec<u16>)>) {
+    fn update(&mut self, new_mesh_data: Vec<(Vec<Vertex>, Vec<u16>)>, bg: [f32; 3]) {
         self.meshes = new_mesh_data
             .into_iter()
             .map(|(vertices, indices)| {
@@ -217,6 +219,8 @@ impl Backend for State {
                 }
             })
             .collect();
+        println!("{:?}", bg);
+        self.bg = bg;
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -238,9 +242,9 @@ impl Backend for State {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
+                            r: self.bg[0] as f64,
+                            g: self.bg[1] as f64,
+                            b: self.bg[2] as f64,
                             a: 1.0,
                         }),
                         store: wgpu::StoreOp::Store,
