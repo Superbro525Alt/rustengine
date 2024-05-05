@@ -3,6 +3,8 @@ use crate::engine::gameobject;
 use crate::engine::renderer;
 use crate::engine::static_component;
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::thread::{JoinHandle, Thread};
 
 pub struct EngineState {
     objects: Vec<i32>,
@@ -32,17 +34,22 @@ impl EngineState {
 
 pub struct Engine {
     pub state: EngineState,
-    pub camera: camera::Camera,
     pub renderer: renderer::Renderer,
+    pub graphics: bool,
+    render_handle: Option<JoinHandle<()>>,
 }
 
 impl Engine {
-    pub async fn new() -> Self {
+    pub async fn new(graphics: bool) -> Self {
         Self {
             state: EngineState::new(),
-            camera: camera::Camera::new(),
-            // renderer: renderer::Renderer::none()
-            renderer: renderer::Renderer::new(String::from("Engine"), 800, 600).await,
+            renderer: if !graphics {
+                renderer::Renderer::none()
+            } else {
+                renderer::Renderer::new(String::from("Engine"), 800, 600).await
+            },
+            graphics,
+            render_handle: None,
         }
     }
 
@@ -50,15 +57,16 @@ impl Engine {
         &self.state
     }
 
-    pub fn camera(&mut self) -> &camera::Camera {
-        &self.camera
-    }
-
     pub fn renderer(&mut self) -> &renderer::Renderer {
         &self.renderer
     }
 
     pub fn tick(&mut self) {
+        // if self.render_handle.is_none() {
+        //     let renderer = &self.renderer;
+        //     self.render_handle = Some(thread::spawn(|| {renderer.run() }));
+        // }
+
         for obj in self.state.objects.iter() {
             gameobject::to_object(*obj, |game_object| {
                 if game_object.state.parent_id.is_none() {
@@ -72,7 +80,6 @@ impl Engine {
         }
 
         // self.renderer.tick(&self.camera, &self.state.objects);
-        self.camera.tick();
     }
 
     pub fn add_object(&mut self, obj: gameobject::MutexdGameObject) -> i32 {

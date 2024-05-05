@@ -8,7 +8,7 @@ fn main() {
 }
 
 async fn run() {
-    let mut e = engine::state::Engine::new().await;
+    let mut e = engine::state::Engine::new(true).await;
 
     // let g1 = e.add_object(engine::gameobject::make_base_game_object(String::from(
     //     "network",

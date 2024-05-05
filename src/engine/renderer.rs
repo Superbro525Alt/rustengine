@@ -6,7 +6,9 @@ use winit::{
 
 use std::sync::{Arc, Mutex};
 
-use crate::engine::graphics_backend::{vertex::Vertex, Backend, State};
+use crate::engine::graphics_backend::{
+    object::Object, primitives::Cube, vertex::Vertex, Backend, State,
+};
 use rand::Rng;
 use wgpu;
 
@@ -61,6 +63,7 @@ impl Renderer {
         let mut state = self.backend.expect("PANIC");
         let mut window = self.window.expect("PANIC");
         let mut rng = rand::thread_rng();
+        let mut t = std::time::SystemTime::now();
         event_loop.run(move |event, _, control_flow| {
             match event {
                 Event::WindowEvent {
@@ -91,12 +94,19 @@ impl Renderer {
                     }
                 }
                 Event::RedrawRequested(window_id) if window_id == window.lock().unwrap().id() => {
+                    println!("{:?}", t.elapsed());
+                    t = std::time::SystemTime::now();
                     state.update(
-                        vec![],
+                        vec![
+                            // ( [Vertex{position: [0.0, 0.0, 0.0], color: [1.0, 0.0, 0.0]}, Vertex{position: [1.0, 0.0, 0.0], color: [0.0, 1.0, 0.0]}, Vertex{position: [0.5, 1.0, 0.0], color: [0.0, 0.0, 1.0]}].to_vec(),
+                            // [0, 1, 2, 0].to_vec())
+                            Cube::new(0.5, [1.0, 0.0, 0.0]).desc_raw(),
+                        ],
                         [
-                            rng.gen_range::<f32, _>(0.0..1.0),
-                            rng.gen_range::<f32, _>(0.0..1.0),
-                            rng.gen_range::<f32, _>(0.0..1.0),
+                            // rng.gen_range::<f32, _>(0.0..1.0),
+                            // rng.gen_range::<f32, _>(0.0..1.0),
+                            // rng.gen_range::<f32, _>(0.0..1.0),
+                            0.0, 0.0, 1.0,
                         ],
                     );
                     match state.render() {
