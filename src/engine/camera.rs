@@ -70,13 +70,17 @@ impl Camera {
         )
     }
 
-    pub fn rotate_around_origin(&mut self) {
-        let rad: cgmath::Rad<f32> = cgmath::Deg(self.rotation_angle).into();
-        let cos_angle = rad.cos();
-        let sin_angle = rad.sin();
-        let new_x = self.position.x * cos_angle - self.position.z * sin_angle;
-        let new_z = self.position.x * sin_angle + self.position.z * cos_angle;
-        self.position.x = new_x;
-        self.position.z = new_z;
+    pub fn rotate(&mut self, delta_x: f32, delta_y: f32) {
+        let sensitivity = 0.1; // Sensitivity factor, adjust as needed
+
+        // Update yaw and pitch with sensitivity adjustment
+        self.yaw += delta_x * sensitivity;
+        self.pitch += delta_y * sensitivity;
+
+        // Clamp pitch to prevent flipping over at the poles
+        self.pitch = self.pitch.clamp(-89.0, 89.0);
+
+        // Update forward vector based on new yaw and pitch
+        // self.update_camera_vectors();
     }
 }

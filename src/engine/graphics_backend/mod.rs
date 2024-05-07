@@ -1,3 +1,4 @@
+use cgmath::Transform;
 use std::future::Future;
 use std::iter;
 use std::process::exit;
@@ -239,12 +240,41 @@ impl Backend for State {
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
-        false
+        match event {
+            WindowEvent::KeyboardInput {
+                input:
+                    KeyboardInput {
+                        state: ElementState::Pressed,
+                        virtual_keycode: Some(keycode),
+                        ..
+                    },
+                ..
+            } => match keycode {
+                VirtualKeyCode::Up => {
+                    self.camera.position.y += 0.1;
+                    true
+                }
+                VirtualKeyCode::Down => {
+                    self.camera.position.y -= 0.1;
+                    true
+                }
+                VirtualKeyCode::Right => {
+                    self.camera.position.x += 0.1;
+                    true
+                }
+                VirtualKeyCode::Left => {
+                    self.camera.position.x -= 0.1;
+                    true
+                }
+                _ => false,
+            },
+            WindowEvent::CursorMoved { position, .. } => {
+                false
+            }
+            _ => false,
+        }
     }
-
     fn update(&mut self, new_mesh_data: Vec<(Vec<Vertex>, Vec<u16>)>, bg: [f32; 3]) {
-        self.camera.rotate_around_origin();
-
         self.camera_uniform.update(&self.camera);
         self.queue.write_buffer(
             &self.camera_buffer,
@@ -252,16 +282,37 @@ impl Backend for State {
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
 
+        self.bg = bg;
+
+        let view_projection = self.camera.projection_matrix() * self.camera.view_matrix();
+
         self.meshes = new_mesh_data
             .into_iter()
             .map(|(vertices, indices)| {
+                let transformed_vertices: Vec<Vertex> = vertices
+                    .iter()
+                    .map(|vertex| {
+                        let mut pos = cgmath::Point3::new(
+                            vertex.position[0],
+                            vertex.position[1],
+                            vertex.position[2],
+                        );
+                        let transformed_pos = view_projection.transform_point(pos);
+                        Vertex {
+                            position: [transformed_pos.x, transformed_pos.y, transformed_pos.z],
+                            ..*vertex
+                        }
+                    })
+                    .collect();
+
                 let vertex_buffer =
                     self.device
                         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                             label: Some("Vertex Buffer"),
-                            contents: bytemuck::cast_slice(&vertices),
+                            contents: bytemuck::cast_slice(&transformed_vertices),
                             usage: wgpu::BufferUsages::VERTEX,
                         });
+
                 let index_buffer =
                     self.device
                         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -270,7 +321,6 @@ impl Backend for State {
                             usage: wgpu::BufferUsages::INDEX,
                         });
 
-                println!("{:?}", vertices);
                 Mesh {
                     vertex_buffer,
                     index_buffer,
@@ -278,7 +328,6 @@ impl Backend for State {
                 }
             })
             .collect();
-        self.bg = bg;
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {

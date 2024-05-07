@@ -12,6 +12,8 @@ use crate::engine::graphics_backend::{
 use rand::Rng;
 use wgpu;
 
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 pub struct Renderer {
     pub title: String,
     pub width: u32,
@@ -64,6 +66,8 @@ impl Renderer {
         let mut window = self.window.expect("PANIC");
         let mut rng = rand::thread_rng();
         let mut t = std::time::SystemTime::now();
+        let mut times: Vec<std::time::SystemTime> = vec![];
+
         event_loop.run(move |event, _, control_flow| {
             match event {
                 Event::WindowEvent {
@@ -81,7 +85,21 @@ impl Renderer {
                                         ..
                                     },
                                 ..
-                            } => *control_flow = ControlFlow::Exit,
+                            } => {
+                                *control_flow = ControlFlow::Exit;
+                                let average_frame_time = times
+                                    .windows(2)
+                                    .filter_map(|w| w[1].duration_since(w[0]).ok())
+                                    .map(|duration| duration.as_millis())
+                                    .sum::<u128>()
+                                    as f64
+                                    / (times.len() - 1) as f64;
+                                println!(
+                                    "Average frame time: {} ms, FPS: {}",
+                                    average_frame_time,
+                                    (1000 as f64) / average_frame_time
+                                );
+                            }
                             WindowEvent::Resized(physical_size) => {
                                 state.resize(*physical_size);
                             }
@@ -94,8 +112,9 @@ impl Renderer {
                     }
                 }
                 Event::RedrawRequested(window_id) if window_id == window.lock().unwrap().id() => {
-                    println!("{:?}", t.elapsed());
+                    println!("Frame Time: {:?}", t.elapsed().unwrap());
                     t = std::time::SystemTime::now();
+                    times.push(t);
                     state.update(
                         vec![
                             // ( [Vertex{position: [0.0, 0.0, 0.0], color: [1.0, 0.0, 0.0]}, Vertex{position: [1.0, 0.0, 0.0], color: [0.0, 1.0, 0.0]}, Vertex{position: [0.5, 1.0, 0.0], color: [0.0, 0.0, 1.0]}].to_vec(),
@@ -104,7 +123,7 @@ impl Renderer {
                         ],
                         [
                             // rng.gen_range::<f32, _>(0.0..1.0),
-                            // rng.gen_range::<f32, _>(0.0..1.0),
+                            // rng.gen_range::<f32, _>(0.0..1.0), control_state: ,
                             // rng.gen_range::<f32, _>(0.0..1.0),
                             0.0, 0.0, 1.0,
                         ],

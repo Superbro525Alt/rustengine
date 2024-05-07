@@ -10,9 +10,11 @@ fn main() {
 async fn run() {
     let mut e = engine::state::Engine::new(true).await;
 
-    // let g1 = e.add_object(engine::gameobject::make_base_game_object(String::from(
-    //     "network",
-    // )));
+    let g1 = e.add_object(engine::gameobject::make_base_game_object(String::from(
+        "thing1",
+    )));
+
+    engine::gameobject::add_component(g1, engine::components::make_safe(engine::component::LambdaComponent::new(String::from("lambda"), move || {println!("tick")})));
     // let g2 = e.add_object(engine::gameobject::make_base_game_object(String::from(
     //     "child",
     // )));
@@ -36,5 +38,6 @@ async fn run() {
     // loop {
     // e.tick();
     // }
-    e.renderer.run();
+    // e.renderer.run();
+    e.tick();
 }

@@ -34,35 +34,43 @@ where
 
 impl_downcast!(ComponentTrait);
 
-pub struct Component {
+pub struct LambdaComponent<F, T>
+where
+    F: FnMut() -> T,
+{
     name: String,
     state: ComponentState,
+    tick: F,
 }
 
-impl ComponentTrait for Component {
+impl<F, T> ComponentTrait for LambdaComponent<F, T>
+where
+    Self: 'static,
+    F: FnMut() -> T + Send + Sync,
+{
     fn tick(&mut self) {
-        // Logic to tick the component
-        println!("Tick on {}.", self.name())
+        (self.tick)(); // Call the closure
+        println!("Tick on {}.", self.name);
     }
+
     fn name(&self) -> &str {
         &self.name
     }
+
     fn state(&mut self) -> &mut ComponentState {
         &mut self.state
     }
 }
 
-pub fn create_component(name: String, _deps: Vec<Arc<Mutex<dyn ComponentTrait>>>) -> Component {
-    Component {
-        name,
-        state: ComponentState::new(),
-    }
-}
-
-pub fn to_component<F, T>(object: Arc<Mutex<Component>>, f: F) -> T
+impl<F, T> LambdaComponent<F, T>
 where
-    F: FnOnce(&mut Component) -> T,
+    F: FnMut() -> T + Send + Sync,
 {
-    let mut comp = object.lock().unwrap();
-    f(&mut comp)
+    pub fn new(name: String, f: F) -> Self {
+        Self {
+            name,
+            tick: f,
+            state: ComponentState::new(),
+        }
+    }
 }
