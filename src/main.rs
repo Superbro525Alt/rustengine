@@ -1,7 +1,9 @@
 mod engine;
+use std::sync::{Arc, Mutex};
 
 #[allow(unused)]
 use crate::engine::component::ComponentTrait;
+use crate::engine::component::InputTickBehavior;
 
 fn main() {
     pollster::block_on(run());
@@ -13,8 +15,12 @@ async fn run() {
     let g1 = e.add_object(engine::gameobject::make_base_game_object(String::from(
         "thing1",
     )));
+    // //
+    engine::gameobject::add_component(g1, engine::component::LambdaComponent::new(String::from("ok"), || {println!("ok")}));
 
-    engine::gameobject::add_component(g1, engine::components::make_safe(engine::component::LambdaComponent::new(String::from("lambda"), move || {println!("tick")})));
+    // let mut c = engine::components::InputComponent::new(String::from("k"));
+    
+        
     // let g2 = e.add_object(engine::gameobject::make_base_game_object(String::from(
     //     "child",
     // )));

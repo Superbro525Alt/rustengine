@@ -1,4 +1,7 @@
 use crate::engine::component;
+use std::any::Any;
+use crate::engine::component::{TickBehavior, ComponentTrait};
+use downcast_rs::Downcast;
 use colored::Colorize;
 use lazy_static::lazy_static;
 use std::any::TypeId;
@@ -79,14 +82,14 @@ impl GameObjectState {
 pub struct GameObject {
     pub name: String,
     pub id: i32,
-    pub components: Vec<Arc<Mutex<dyn component::ComponentTrait>>>,
+    pub components: Vec<Arc<Mutex<component::ComponentWrapper>>>,
     pub state: GameObjectState,
 }
 
 impl GameObject {
     pub fn new(
         name: String,
-        components: Vec<Arc<Mutex<dyn component::ComponentTrait>>>,
+        components: Vec<Arc<Mutex<component::ComponentWrapper>>>,
         state: GameObjectState,
     ) -> Arc<Mutex<Self>> {
         let id = GAME_OBJECT_COUNT.lock().unwrap().get();
@@ -129,32 +132,48 @@ impl GameObject {
         self.id
     }
 
-    pub fn components(&self) -> &[Arc<Mutex<dyn component::ComponentTrait>>] {
+    pub fn components(&self) -> &[Arc<Mutex<component::ComponentWrapper>>] {
         &self.components
     }
 
-    pub fn add_component(&mut self, component: Arc<Mutex<dyn component::ComponentTrait>>) {
+    pub fn add_component(&mut self, component: Arc<Mutex<component::ComponentWrapper>>) {
         self.components.push(component);
     }
 
-    pub fn get_component<T: component::ComponentTrait + 'static, F>(&self, mut f: F)
-    where
-        F: FnMut(&mut T),
-    {
-        self.components.iter().find_map(|comp| {
-            let mut comp_lock = comp.lock().unwrap();
-            if let Some(mut casted_comp) = comp_lock.as_any_mut().downcast_mut::<T>() {
-                Some(f(&mut casted_comp))
+    // pub fn get_component<T: component::ComponentTrait + 'static, F>(&self, mut f: F)
+    // where
+    //     F: FnMut(&mut T),
+    // {
+    //     self.components.iter().find_map(|comp| {
+    //         let mut comp_lock = comp.lock().unwrap();
+    //         if let Some(mut casted_comp) = comp_lock.as_any_mut().downcast_mut::<T>() {
+    //             Some(f(&mut casted_comp))
+    //         } else {
+    //             None
+    //         }
+    //     });
+    // }
+
+    pub fn get_component<T: ComponentTrait + 'static>(&self) -> Option<Arc<Mutex<dyn component::ComponentTrait>>> {
+        self.components.iter().find_map(|wrapper| {
+            let wrapper = wrapper.lock().unwrap();
+            if wrapper.component.as_any().downcast_ref::<T>().is_some() {
+                Some(wrapper.component.clone())
             } else {
                 None
             }
-        });
+        })
     }
 
     pub fn tick_self(&self) {
         for component in &self.components {
             let mut comp = component.lock().unwrap();
-            comp.tick();
+            let render_data = comp.tick(Some(&component::InputData{}));
+            if render_data.is_some() {
+
+            }
+            // match comp
+            // comp.tick();
         }
     }
 
@@ -213,38 +232,44 @@ pub fn _internal_to_object<T, F: FnOnce(&GameObject) -> T>(obj_id: i32, func: F)
     None
 }
 
-pub fn add_component(object: i32, comp: Arc<Mutex<dyn component::ComponentTrait>>) {
+// pub fn add_component(object: i32, comp: Arc<Mutex<dyn component::TickVariant>>) {
+
+pub fn add_component(object: i32, comp: Arc<Mutex<component::ComponentWrapper>>) {
     let comp_type_id = {
         let comp_lock = comp.lock().unwrap();
-        comp_lock.type_id()
+        let variant_lock = comp_lock.ticker.lock().unwrap();
+        match &*variant_lock {
+            component::TickVariant::Render(renderer) => {
+                TypeId::of::<dyn component::RenderTickBehavior>()
+            },
+            component::TickVariant::Default(renderer) => {
+                TypeId::of::<dyn component::RenderTickBehavior>()
+            },
+            component::TickVariant::Input(renderer) => {
+                TypeId::of::<dyn component::RenderTickBehavior>()
+            },
+
+            // Add other match arms if other variants exist
+        }
     };
 
     let already_exists = to_object(object, |obj| {
         obj.components().iter().any(|existing_comp| {
             let existing_comp_lock = existing_comp.lock().unwrap();
-            existing_comp_lock.type_id() == comp_type_id
+            let existing_variant_lock = existing_comp_lock.ticker.lock().unwrap();
+            match &*existing_variant_lock {
+                component::TickVariant::Render(_) => TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id,
+                component::TickVariant::Default(_) => TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id,
+                component::TickVariant::Input(_) => TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id,
+                // Match other variants similarly
+            }
         })
     });
 
     if already_exists {
-        let comp_name = {
-            let comp_lock = comp.lock().unwrap();
-            comp_lock.name().to_string()
-        };
-        let game_object_name = {
-            /*let game_object = */
-            GameObject::find_by_id(object)
-                .unwrap()
-                .lock()
-                .unwrap()
-                .name()
-                .to_string()
-        };
-        let text = format!(
-            "GameObject {} already has component {}",
-            game_object_name, comp_name
-        );
-        eprintln!("ERROR: {}", text);
+        // let comp_name = comp.lock().unwrap().component.lock().unwrap().name();
+        // let game_object_name = GameObject::find_by_id(object).unwrap().lock().unwrap().name().to_string();
+        // eprintln!("ERROR: GameObject {} already has component {}", game_object_name, comp_name);
         exit(1);
     } else {
         to_object(object, |obj| {
@@ -254,40 +279,43 @@ pub fn add_component(object: i32, comp: Arc<Mutex<dyn component::ComponentTrait>
 }
 
 pub fn has_component<T: component::ComponentTrait + 'static>(obj_id: i32) -> bool {
-    let game_objects = GAME_OBJECT_REGISTRY.lock().unwrap();
-    if let Some(obj_arc) = game_objects.get(&obj_id) {
-        let has_component = {
-            let game_object = obj_arc.lock().unwrap();
-            game_object.components().iter().any(|comp_mutex| {
-                let comp = comp_mutex.lock().unwrap();
-                TypeId::of::<T>() == comp.type_id()
-            })
-        };
-        return has_component;
-    }
+    let game_objects = GAME_OBJECT_REGISTRY.lock().expect("Registry lock failed");
+    let game_object = match game_objects.get(&obj_id) {
+        Some(obj_arc) => obj_arc.lock().expect("GameObject lock failed"),
+        None => {
+            eprintln!("ERROR: No object with id {}", obj_id);
+            exit(1);
+        }
+    };
 
-    if game_objects.get(&obj_id).is_none() {
-        let text = format!("No object with id {}", obj_id);
-        eprintln!("ERROR: {}", text);
-        exit(1);
-    }
-    false
+    let comp_type_id = TypeId::of::<T>();
+
+    let already_exists = to_object(obj_id, |obj| {
+        obj.components().iter().any(|existing_comp| {
+            let existing_comp_lock = existing_comp.lock().unwrap();
+            let existing_variant_lock = existing_comp_lock.ticker.lock().unwrap();
+            match &*existing_variant_lock {
+                component::TickVariant::Render(_) => TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id,
+                component::TickVariant::Default(_) => TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id,
+                component::TickVariant::Input(_) => TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id,
+                // Match other variants similarly
+            }
+        })
+    });
+
+    already_exists
 }
 
-pub fn get_component<T: component::ComponentTrait + 'static, F>(obj_id: i32, f: F)
-where
-    F: FnMut(&mut T),
+
+pub fn get_component<T: component::ComponentTrait + 'static>(obj_id: i32)
 {
     if has_component::<T>(obj_id) {
         to_object(obj_id, |obj| {
-            obj.get_component::<T, _>(f);
+            obj.get_component::<T>();
         })
     } else {
-        let text = format!(
-            "The object with id {} has does not contain the requested component",
-            obj_id
-        );
-        eprintln!("ERROR: {}", text);
+        eprintln!("ERROR: The object with id {} does not contain the requested component", obj_id);
         exit(1);
     }
 }
+

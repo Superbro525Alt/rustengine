@@ -1,36 +1,33 @@
-use crate::engine::component;
+use crate::engine::component::{ComponentTrait, TickVariant, TickBehavior, InputTickBehavior, InputData, RenderTickBehavior, RenderOutput, ComponentState, ComponentWrapper};
 use std::sync::{Arc, Mutex};
 
-pub struct Input {
+struct RenderComponent {
     name: String,
-    state: component::ComponentState,
+    state: ComponentState
 }
 
-impl Input {
-    pub fn new() -> Self {
-        Self {
-            name: String::from("Input"),
-            state: component::ComponentState::new(),
-        }
-    }
-}
-
-impl component::ComponentTrait for Input {
-    fn tick(&mut self) {
-        println!("Input Tick");
-    }
-
+impl ComponentTrait for RenderComponent {
     fn name(&self) -> &str {
         &self.name
     }
 
-    fn state(&mut self) -> &mut component::ComponentState {
+    fn state(&mut self) -> &mut ComponentState {
         &mut self.state
     }
 }
 
-pub fn make_safe<T: component::ComponentTrait + 'static>(
-    comp: T,
-) -> Arc<Mutex<dyn component::ComponentTrait>> {
-    Arc::new(Mutex::new(comp))
+impl RenderTickBehavior for RenderComponent {
+    fn render_tick(&mut self) -> RenderOutput {
+        // format!("{} performed a render tick", self.name)
+        RenderOutput{}
+    }
 }
+
+impl RenderComponent {
+    pub fn new(name: String) -> Arc<Mutex<ComponentWrapper>> {
+        let component = Arc::new(Mutex::new(RenderComponent { name, state: ComponentState::new() }));
+        let tick_variant = Arc::new(Mutex::new(TickVariant::Render(component.clone())));
+        Arc::new(Mutex::new(ComponentWrapper::new(component, tick_variant)))
+    }
+}
+
