@@ -16,7 +16,7 @@ async fn run() {
         "thing1",
     )));
     // //
-    engine::gameobject::add_component(g1, engine::component::LambdaComponent::new(String::from("ok"), || {println!("ok")}));
+    engine::gameobject::add_component(g1, engine::component::LambdaComponent::new(String::from("ok"), move || {println!("ok")}));
 
     // let mut c = engine::components::InputComponent::new(String::from("k"));
     
