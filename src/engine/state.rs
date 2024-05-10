@@ -2,14 +2,19 @@ use crate::engine::camera;
 use crate::engine::gameobject;
 use crate::engine::renderer;
 use crate::engine::static_component;
+use crate::engine::component;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::{JoinHandle, Thread};
+
+// pub trait ThreadSafe: Send + Sync {}
 
 pub struct EngineState {
     objects: Vec<i32>,
     static_components: Vec<Arc<Mutex<dyn static_component::StaticComponent>>>,
 }
+
+// impl ThreadSafe for EngineState {}
 
 impl EngineState {
     pub fn new() -> Self {
@@ -32,6 +37,7 @@ impl EngineState {
     }
 }
 
+
 pub struct Engine {
     pub state: EngineState,
     pub renderer: renderer::Renderer,
@@ -39,9 +45,14 @@ pub struct Engine {
     render_handle: Option<JoinHandle<()>>,
 }
 
+unsafe impl Send for Engine {}
+unsafe impl Sync for Engine {}
+
+// impl ThreadSafe for Engine {}
+
 impl Engine {
-    pub async fn new(graphics: bool) -> Self {
-        Self {
+    pub async fn new(graphics: bool) -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self {
             state: EngineState::new(),
             renderer: if !graphics {
                 renderer::Renderer::none()
@@ -50,7 +61,7 @@ impl Engine {
             },
             graphics,
             render_handle: None,
-        }
+        }))
     }
 
     pub fn state(&mut self) -> &EngineState {
@@ -59,6 +70,10 @@ impl Engine {
 
     pub fn renderer(&mut self) -> &renderer::Renderer {
         &self.renderer
+    }
+
+    pub fn render(&mut self, data: component::RenderOutput) {
+
     }
 
     pub fn tick(&mut self) {

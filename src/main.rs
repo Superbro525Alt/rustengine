@@ -12,12 +12,13 @@ fn main() {
 async fn run() {
     let mut e = engine::state::Engine::new(true).await;
 
-    let g1 = e.add_object(engine::gameobject::make_base_game_object(String::from(
+    let g1 = e.lock().unwrap().add_object(engine::gameobject::make_base_game_object(String::from(
         "thing1",
-    )));
+    ), e.clone()));
     // //
-    engine::gameobject::add_component(g1, engine::component::LambdaComponent::new(String::from("ok"), move || {println!("ok")}));
+    // engine::gameobject::add_component(g1, engine::component::LambdaComponent::new(String::from("ok"), move || {println!("ok")}));
 
+    engine::gameobject::add_component(g1, engine::components::InputComponent::new(String::from("i")));
     // let mut c = engine::components::InputComponent::new(String::from("k"));
     
         
@@ -45,5 +46,5 @@ async fn run() {
     // e.tick();
     // }
     // e.renderer.run();
-    e.tick();
+    e.lock().unwrap().tick();
 }

@@ -94,6 +94,7 @@ impl TickVariant {
         match self {
             TickVariant::Input(behavior) => {
                 if let Some(input) = input {
+                    // println!("ticking");
                     behavior.lock().unwrap().tick_with_input(input);
                 }
                 None

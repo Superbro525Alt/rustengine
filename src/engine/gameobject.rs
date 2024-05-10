@@ -1,6 +1,7 @@
 use crate::engine::component;
 use std::any::Any;
 use crate::engine::component::{TickBehavior, ComponentTrait};
+use crate::engine::state::Engine;
 use downcast_rs::Downcast;
 use colored::Colorize;
 use lazy_static::lazy_static;
@@ -84,6 +85,7 @@ pub struct GameObject {
     pub id: i32,
     pub components: Vec<Arc<Mutex<component::ComponentWrapper>>>,
     pub state: GameObjectState,
+    pub engine: Arc<Mutex<Engine>>
 }
 
 impl GameObject {
@@ -91,6 +93,7 @@ impl GameObject {
         name: String,
         components: Vec<Arc<Mutex<component::ComponentWrapper>>>,
         state: GameObjectState,
+        engine: Arc<Mutex<Engine>>
     ) -> Arc<Mutex<Self>> {
         let id = GAME_OBJECT_COUNT.lock().unwrap().get();
         // let id = *_id;
@@ -99,6 +102,7 @@ impl GameObject {
             id,
             components,
             state,
+            engine
         }));
         GAME_OBJECT_REGISTRY
             .lock()
@@ -170,7 +174,7 @@ impl GameObject {
             let mut comp = component.lock().unwrap();
             let render_data = comp.tick(Some(&component::InputData{}));
             if render_data.is_some() {
-
+                self.engine.lock().unwrap().render(render_data.expect("nahh. idk what the hell you did"));
             }
             // match comp
             // comp.tick();
@@ -191,8 +195,8 @@ impl GameObject {
     }
 }
 
-pub fn make_base_game_object(name: String) -> Arc<Mutex<GameObject>> {
-    GameObject::new(name, vec![], GameObjectState::new(true, None, vec![]))
+pub fn make_base_game_object(name: String, engine: Arc<Mutex<Engine>>) -> Arc<Mutex<GameObject>> {
+    GameObject::new(name, vec![], GameObjectState::new(true, None, vec![]), engine)
 }
 
 pub fn reparent(parent_id: i32, child_id: i32) {
