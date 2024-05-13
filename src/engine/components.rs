@@ -1,5 +1,6 @@
 use crate::engine::component::{ComponentTrait, TickVariant, TickBehavior, InputTickBehavior, InputData, RenderTickBehavior, RenderOutput, ComponentState, ComponentWrapper};
 use std::sync::{Arc, Mutex};
+use crate::engine::graphics_backend::primitives::Cube;
 
 pub struct RenderComponent {
     name: String,
@@ -19,7 +20,7 @@ impl ComponentTrait for RenderComponent {
 impl RenderTickBehavior for RenderComponent {
     fn render_tick(&mut self) -> RenderOutput {
         // format!("{} performed a render tick", self.name)
-        RenderOutput{}
+        RenderOutput{obj: Box::new(Cube::new(0.1, [1.0, 0.0, 0.0]))}
     }
 }
 

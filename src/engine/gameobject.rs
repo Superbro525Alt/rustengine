@@ -85,7 +85,7 @@ pub struct GameObject {
     pub id: i32,
     pub components: Vec<Arc<Mutex<component::ComponentWrapper>>>,
     pub state: GameObjectState,
-    pub engine: Arc<Mutex<Engine>>
+    render_reference: Option<usize>
 }
 
 impl GameObject {
@@ -93,7 +93,6 @@ impl GameObject {
         name: String,
         components: Vec<Arc<Mutex<component::ComponentWrapper>>>,
         state: GameObjectState,
-        engine: Arc<Mutex<Engine>>
     ) -> Arc<Mutex<Self>> {
         let id = GAME_OBJECT_COUNT.lock().unwrap().get();
         // let id = *_id;
@@ -102,7 +101,7 @@ impl GameObject {
             id,
             components,
             state,
-            engine
+            render_reference: None
         }));
         GAME_OBJECT_REGISTRY
             .lock()
@@ -169,34 +168,54 @@ impl GameObject {
         })
     }
 
-    pub fn tick_self(&self) {
-        for component in &self.components {
+    pub fn input_data(&mut self) -> component::InputData {
+        component::InputData{}
+    }
+
+    pub fn tick_self(&mut self, engine: &mut Engine) {
+        for component in &self.components.clone() {
             let mut comp = component.lock().unwrap();
-            let render_data = comp.tick(Some(&component::InputData{}));
+            let mut render_data = comp.tick(Some(&self.input_data()));
+            println!("render first step: {:?}", render_data.as_mut().expect("nahh").obj.desc_raw());
             if render_data.is_some() {
-                self.engine.lock().unwrap().render(render_data.expect("nahh. idk what the hell you did"));
+                println!("renderdata is some");
+                if self.state.active {
+                    println!("active");
+                    if self.render_reference.is_some() {
+                        engine.remove_from_render_queue(self.render_reference.expect("no render reference"));
+                    }
+
+                    println!("ahhh");
+
+                    self.render_reference = Some(engine.render(render_data.take().expect("get good")));
+                    println!("rendering");
+                } else {
+                    engine.remove_from_render_queue(self.render_reference.expect("no render reference"));
+                }
             }
+
+            println!("{:?}", self.render_reference);
             // match comp
             // comp.tick();
         }
     }
 
-    pub fn tick_children(&self) {
+    pub fn tick_children(&mut self, engine: &mut Engine) {
         let children = self.state.children();
         for child_arc in children {
-            let child = child_arc.lock().unwrap();
-            child.tick_all();
+            let mut child = child_arc.lock().unwrap();
+            child.tick_all(engine);
         }
     }
 
-    pub fn tick_all(&self) {
-        self.tick_self();
-        self.tick_children();
+    pub fn tick_all(&mut self, engine: &mut Engine) {
+        self.tick_self(engine);
+        self.tick_children(engine);
     }
 }
 
-pub fn make_base_game_object(name: String, engine: Arc<Mutex<Engine>>) -> Arc<Mutex<GameObject>> {
-    GameObject::new(name, vec![], GameObjectState::new(true, None, vec![]), engine)
+pub fn make_base_game_object(name: String) -> Arc<Mutex<GameObject>> {
+    GameObject::new(name, vec![], GameObjectState::new(true, None, vec![]))
 }
 
 pub fn reparent(parent_id: i32, child_id: i32) {

@@ -3,6 +3,8 @@ use downcast_rs::Downcast;
 use serde_json::Value;
 use std::any::{self, Any, TypeId};
 use std::sync::{Arc, Mutex};
+use crate::engine::graphics_backend::object::Object;
+use crate::engine::graphics_backend::vertex::Vertex;
 
 #[derive(Clone)]
 pub struct ComponentState {
@@ -42,7 +44,15 @@ pub enum ComponentType {
 }
 
 pub struct InputData;
-pub struct RenderOutput;
+pub struct RenderOutput {
+    pub obj: Box<dyn Object>,
+}
+
+impl RenderOutput {
+    pub fn raw_desc(&mut self) -> (Vec<Vertex>, Vec<u16>) {
+        self.obj.desc_raw()
+    }
+}
 
 pub trait TickBehavior: Send + Sync {
     fn tick(&mut self);

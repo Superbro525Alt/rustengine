@@ -51,8 +51,8 @@ unsafe impl Sync for Engine {}
 // impl ThreadSafe for Engine {}
 
 impl Engine {
-    pub async fn new(graphics: bool) -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(Self {
+    pub async fn new(graphics: bool) -> Self {
+        Self {
             state: EngineState::new(),
             renderer: if !graphics {
                 renderer::Renderer::none()
@@ -61,7 +61,7 @@ impl Engine {
             },
             graphics,
             render_handle: None,
-        }))
+        }
     }
 
     pub fn state(&mut self) -> &EngineState {
@@ -72,8 +72,18 @@ impl Engine {
         &self.renderer
     }
 
-    pub fn render(&mut self, data: component::RenderOutput) {
+    pub fn render(&mut self, data: component::RenderOutput) -> usize {
+        self.renderer.render_queue.push(data);
+        let pos = self.renderer.render_queue.len() - 1;
+        pos 
+    }
 
+    pub fn remove_from_render_queue(&mut self, reference: usize) {
+        self.renderer.render_queue.remove(reference); 
+    }
+    
+    pub fn input_data(&mut self) -> component::InputData {
+        component::InputData{}
     }
 
     pub fn tick(&mut self) {
@@ -82,10 +92,10 @@ impl Engine {
         //     self.render_handle = Some(thread::spawn(|| {renderer.run() }));
         // }
 
-        for obj in self.state.objects.iter() {
+        for obj in self.state.objects.clone().iter() {
             gameobject::to_object(*obj, |game_object| {
                 if game_object.state.parent_id.is_none() {
-                    game_object.tick_all();
+                    game_object.tick_all(self);
                 }
             });
         }
@@ -106,4 +116,8 @@ impl Engine {
     pub fn add_static(&mut self, comp: Arc<dyn static_component::StaticComponent>) {
         // self.state.add_static(Arc::new(Mutex::new(comp)));
     }
+
+    // pub fn run_renderer(&mut self) {
+        // self.renderer.lock().unwrap().run();
+    // }
 }

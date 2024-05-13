@@ -9,6 +9,8 @@ use std::sync::{Arc, Mutex};
 use crate::engine::graphics_backend::{
     object::Object, primitives::Cube, vertex::Vertex, Backend, State,
 };
+
+use crate::engine::component::RenderOutput;
 use rand::Rng;
 use wgpu;
 
@@ -20,8 +22,9 @@ pub struct Renderer {
     pub height: u32,
     event_loop: Option<EventLoop<()>>,
     window: Option<Arc<Mutex<Window>>>,
-    backend: Option<Box<State>>,
+    backend: Arc<Mutex<Option<Box<State>>>>,
     pub active: bool,
+    pub render_queue: Vec<RenderOutput>,
 }
 
 impl Renderer {
@@ -32,8 +35,9 @@ impl Renderer {
             height: 0,
             event_loop: None,
             window: None,
-            backend: None,
+            backend: Arc::new(Mutex::new(None)),
             active: false,
+            render_queue: vec![]
         }
     }
 
@@ -55,15 +59,20 @@ impl Renderer {
             height,
             event_loop: Some(event_loop),
             window: Some(window),
-            backend: Some(Box::new(backend)),
+            backend: Arc::new(Mutex::new(Some(Box::new(backend)))),
             active: true,
+            render_queue: vec![]
         }
     }
 
+    pub fn update(&mut self) {
+        
+    }
+
     pub fn run(mut self) {
-        let event_loop = self.event_loop.take().expect("EventLoop already taken");
-        let mut state = self.backend.expect("PANIC");
-        let mut window = self.window.expect("PANIC");
+        let mut event_loop = self.event_loop.take().expect("EventLoop already taken");
+        let mut state = self.backend.clone().lock().unwrap().take().expect("PANIC");
+        let mut window = self.window.take().expect("PANIC");
         let mut rng = rand::thread_rng();
         let mut t = std::time::SystemTime::now();
         let mut times: Vec<std::time::SystemTime> = vec![];
@@ -116,11 +125,12 @@ impl Renderer {
                     t = std::time::SystemTime::now();
                     times.push(t);
                     state.update(
-                        vec![
+                        // vec![
                             // ( [Vertex{position: [0.0, 0.0, 0.0], color: [1.0, 0.0, 0.0]}, Vertex{position: [1.0, 0.0, 0.0], color: [0.0, 1.0, 0.0]}, Vertex{position: [0.5, 1.0, 0.0], color: [0.0, 0.0, 1.0]}].to_vec(),
                             // [0, 1, 2, 0].to_vec())
-                            Cube::new(0.5, [1.0, 0.0, 0.0]).desc_raw(),
-                        ],
+                            // Cube::new(0.5, [1.0, 0.0, 0.0]).desc_raw(),
+                        // ],
+                        self.render_queue.iter_mut().map(|obj| {obj.raw_desc()}).collect(),
                         [
                             // rng.gen_range::<f32, _>(0.0..1.0),
                             // rng.gen_range::<f32, _>(0.0..1.0), control_state: ,
