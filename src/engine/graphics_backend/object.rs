@@ -11,7 +11,7 @@ impl BufferDesc {
         (self.vertex.clone(), self.index.clone())
     }
 }
-pub trait Object {
+pub trait Object: Send + Sync {
     fn desc(&mut self) -> BufferDesc;
     fn move_vertexes(&mut self, pos: [f32; 3]) -> BufferDesc {
         for v in self.get_vertexes().iter_mut() {

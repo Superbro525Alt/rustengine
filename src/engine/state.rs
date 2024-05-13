@@ -52,7 +52,7 @@ unsafe impl Sync for Engine {}
 
 impl Engine {
     pub async fn new(graphics: bool) -> Self {
-        Self {
+        let s = Self {
             state: EngineState::new(),
             renderer: if !graphics {
                 renderer::Renderer::none()
@@ -61,7 +61,13 @@ impl Engine {
             },
             graphics,
             render_handle: None,
-        }
+        };
+             
+        // thread::spawn(move ||{s.renderer.run()});
+        
+        // thread::spawn(|| {s.renderer.run()}).join();
+
+        s
     }
 
     pub fn state(&mut self) -> &EngineState {

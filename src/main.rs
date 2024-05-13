@@ -5,6 +5,9 @@ use std::sync::{Arc, Mutex};
 use crate::engine::component::ComponentTrait;
 use crate::engine::component::InputTickBehavior;
 
+use std::thread;
+use std::time::Duration;
+
 fn main() {
     pollster::block_on(run());
 }
@@ -45,7 +48,17 @@ async fn run() {
     // loop {
     // e.tick();
     // }
-    e.tick();
-    e.renderer.run();
+    // e.tick();
+    // thread::spawn(|| {e.renderer.run()});
+
+    // loop {
+    //     e.tick()
+    // }
+
+    // e.renderer.run();
+
+    thread::sleep(Duration::from_secs(10)); 
+
+    // e.renderer.run();
     // println!("done");
 }

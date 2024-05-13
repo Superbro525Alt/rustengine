@@ -10,6 +10,8 @@ use crate::engine::graphics_backend::{
     object::Object, primitives::Cube, vertex::Vertex, Backend, State,
 };
 
+use std::thread;
+
 use crate::engine::component::RenderOutput;
 use rand::Rng;
 use wgpu;
@@ -26,6 +28,9 @@ pub struct Renderer {
     pub active: bool,
     pub render_queue: Vec<RenderOutput>,
 }
+
+unsafe impl Send for Renderer {}
+unsafe impl Sync for Renderer {}
 
 impl Renderer {
     pub fn none() -> Self {
@@ -69,7 +74,7 @@ impl Renderer {
         
     }
 
-    pub fn run(mut self) {
+    pub fn run(&mut self) {
         let mut event_loop = self.event_loop.take().expect("EventLoop already taken");
         let mut state = self.backend.clone().lock().unwrap().take().expect("PANIC");
         let mut window = self.window.take().expect("PANIC");
