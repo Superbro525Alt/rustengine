@@ -1,6 +1,7 @@
 use crate::engine::graphics_backend::vertex::Vertex;
 use std::f32::consts::PI;
 
+#[derive(Clone)]
 pub struct BufferDesc {
     pub vertex: Vec<Vertex>,
     pub index: Vec<u16>,
@@ -11,6 +12,7 @@ impl BufferDesc {
         (self.vertex.clone(), self.index.clone())
     }
 }
+
 pub trait Object: Send + Sync {
     fn desc(&mut self) -> BufferDesc;
     fn move_vertexes(&mut self, pos: [f32; 3]) -> BufferDesc {

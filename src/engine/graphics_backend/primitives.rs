@@ -1,6 +1,7 @@
 use crate::engine::graphics_backend::object::{BufferDesc, Object};
 use crate::engine::graphics_backend::Vertex;
 
+#[derive(Clone)]
 pub struct Cube {
     vertex: Vec<Vertex>,
     index: Vec<u16>,

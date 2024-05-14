@@ -44,6 +44,8 @@ pub enum ComponentType {
 }
 
 pub struct InputData;
+
+// #[derive(Clone)]
 pub struct RenderOutput {
     pub obj: Box<dyn Object>,
 }

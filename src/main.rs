@@ -48,7 +48,7 @@ async fn run() {
     // loop {
     // e.tick();
     // }
-    // e.tick();
+    e.tick();
     // thread::spawn(|| {e.renderer.run()});
 
     // loop {
