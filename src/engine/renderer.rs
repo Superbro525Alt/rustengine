@@ -81,7 +81,7 @@ impl Renderer {
                                 1000.0 / average_frame_time
                             );
                             control_tx.send(ControlFlow::Exit);
-                            // break;
+                            break;
                         }
                     }
                     AppEvent::Resized(physical_size) => {
@@ -94,17 +94,11 @@ impl Renderer {
                         println!("Frame Time: {:?}", t.elapsed().unwrap());
                         t = std::time::SystemTime::now();
                         times.push(t);
+                        let queue = renderer.lock().unwrap().render_queue.clone();
                         renderer.lock().unwrap().backend.update(
-                            vec![
-                                // ( [Vertex{position: [0.0, 0.0, 0.0], color: [1.0, 0.0, 0.0]}, Vertex{position: [1.0, 0.0, 0.0], color: [0.0, 1.0, 0.0]}, Vertex{position: [0.5, 1.0, 0.0], color: [0.0, 0.0, 1.0]}].to_vec(),
-                                // [0, 1, 2, 0].to_vec())
-                                Cube::new(0.5, [1.0, 0.0, 0.0]).desc_raw(),
-                            ],
+                            queue.lock().unwrap().iter_mut().map(|out| out.obj.desc_raw()).collect(),
                             [
-                                // rng.gen_range::<f32, _>(0.0..1.0),
-                                // rng.gen_range::<f32, _>(0.0..1.0), control_state: ,
-                                // rng.gen_range::<f32, _>(0.0..1.0),
-                                0.0, 0.0, 1.0,
+                                0.0, 0.0, 0.0,
                             ],
                         );
                         let render_result = renderer.lock().unwrap().backend.render();

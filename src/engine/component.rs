@@ -5,6 +5,7 @@ use downcast_rs::Downcast;
 use serde_json::Value;
 use std::any::{self, Any, TypeId};
 use std::sync::{Arc, Mutex};
+use crate::engine::gameobject::GameObject;
 
 #[derive(Clone)]
 pub struct ComponentState {
@@ -57,15 +58,15 @@ impl RenderOutput {
 }
 
 pub trait TickBehavior: Send + Sync {
-    fn tick(&mut self);
+    fn tick(&mut self, obj: &mut GameObject);
 }
 
 pub trait InputTickBehavior: Send + Sync {
-    fn tick_with_input(&mut self, input: &InputData);
+    fn tick_with_input(&mut self, input: &InputData, obj: &mut GameObject);
 }
 
 pub trait RenderTickBehavior: Send + Sync {
-    fn render_tick(&mut self) -> RenderOutput;
+    fn render_tick(&mut self, obj: &mut GameObject) -> RenderOutput;
 }
 
 // impl_downcast!(InputTickBehavior);
@@ -101,24 +102,25 @@ impl TickVariant {
     //     }
     // }
 
-    pub fn tick(&mut self, input: Option<&InputData>) -> Option<RenderOutput> {
+    pub fn tick(&mut self, input: Option<&InputData>, obj: &mut GameObject) -> Option<RenderOutput> {
         match self {
             TickVariant::Input(behavior) => {
                 if let Some(input) = input {
                     // println!("ticking");
-                    behavior.lock().unwrap().tick_with_input(input);
+                    behavior.lock().unwrap().tick_with_input(input, obj);
                 }
                 None
             }
-            TickVariant::Render(behavior) => Some(behavior.lock().unwrap().render_tick()),
+            TickVariant::Render(behavior) => Some(behavior.lock().unwrap().render_tick(obj)),
             TickVariant::Default(behavior) => {
-                behavior.lock().unwrap().tick();
+                behavior.lock().unwrap().tick(obj);
                 None
             }
         }
     }
 }
 
+#[derive(Clone)]
 pub struct ComponentWrapper {
     pub component: Arc<Mutex<dyn ComponentTrait>>,
     pub ticker: Arc<Mutex<TickVariant>>,
@@ -129,9 +131,9 @@ impl ComponentWrapper {
         Self { component, ticker }
     }
 
-    pub fn tick(&self, input: Option<&InputData>) -> Option<RenderOutput> {
+    pub fn tick(&self, input: Option<&InputData>, obj: &mut GameObject) -> Option<RenderOutput> {
         let mut ticker = self.ticker.lock().unwrap();
-        ticker.tick(input)
+        ticker.tick(input, obj)
     }
 }
 
@@ -187,7 +189,41 @@ impl<F> TickBehavior for LambdaComponent<F>
 where
     F: FnMut() + Send + Sync + 'static,
 {
-    fn tick(&mut self) {
+    fn tick(&mut self, obj: &mut GameObject) {
         (self.tick_behavior)();
+    }
+}
+
+pub struct Transform {
+    pub state: ComponentState,
+    pub inner: [f32; 3]
+}
+
+impl ComponentTrait for Transform {
+    fn name(&self) -> &str {
+        "Transform"
+    }
+
+    fn state(&mut self) -> &mut ComponentState {
+        &mut self.state
+    }
+}
+
+impl TickBehavior for Transform {
+    fn tick(&mut self, obj: &mut GameObject) {}
+}
+
+impl Transform {
+    pub fn new() -> Arc<Mutex<ComponentWrapper>> {
+        let transform = Arc::new(Mutex::new(Self {
+            state: ComponentState::new(),
+            inner: [0.0, 0.0, 0.0]
+        }));
+        let tick_variant = Arc::new(Mutex::new(TickVariant::Default(transform.clone())));
+
+        Arc::new(Mutex::new(ComponentWrapper {
+            component: transform as Arc<Mutex<dyn ComponentTrait>>,
+            ticker: tick_variant,
+        }))
     }
 }

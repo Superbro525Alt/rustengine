@@ -7,7 +7,9 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
+use winit::window;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop, EventLoopProxy},
@@ -178,23 +180,34 @@ impl Engine {
         self.state.add_static(comp);
     }
 
-    pub fn run(mut self, event_loop: EventLoop<()>) {
-        let event_tx = self.event_tx.unwrap().clone();
-        let control_rx = self.control_rx.unwrap();
+    pub fn run(engine: Arc<Mutex<Self>>, event_loop: EventLoop<()>) {
+        // println!("running");
+    let self_clone = engine.clone();
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_millis(16)); // Adjust timing as needed, e.g., ~60 Hz
+            let mut engine = self_clone.lock().unwrap();
+            engine.tick(); // Perform periodic update
+        }
+    });
 
-        event_loop.run(move |event, _, control_flow| {
-            // self.tick();
-            if let Some(app_event) = AppEvent::from_event(&event, &self.win_id) {
-                if event_tx.send(app_event).is_err() {
-                    *control_flow = ControlFlow::Exit;
-                    return;
-                }
-            }
+    let event_tx = engine.lock().unwrap().event_tx.take().unwrap();
+    let control_rx = engine.lock().unwrap().control_rx.take().unwrap();
 
-            match control_rx.try_recv() {
-                Ok(new_control_flow) => *control_flow = new_control_flow,
-                Err(_) => *control_flow = ControlFlow::Wait,
+    let win_id = engine.lock().unwrap().win_id;
+
+    event_loop.run(move |event, _, control_flow| {
+        if let Some(app_event) = AppEvent::from_event(&event, &win_id) {
+            if event_tx.send(app_event).is_err() {
+                *control_flow = ControlFlow::Exit;
+                return;
             }
-        });
-    }
+        }
+
+        match control_rx.try_recv() {
+            Ok(new_control_flow) => *control_flow = new_control_flow,
+            Err(_) => *control_flow = ControlFlow::Wait,
+        }
+    });
+}
 }

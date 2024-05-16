@@ -278,7 +278,7 @@ impl Backend for State {
     // }
 
     fn update(&mut self, new_mesh_data: Vec<(Vec<Vertex>, Vec<u16>)>, bg: [f32; 3]) {
-        println!("{:?}", bg);
+        // println!("{:?}", bg);
         self.camera_uniform.update(&self.camera);
         self.queue.write_buffer(
             &self.camera_buffer,
