@@ -19,34 +19,43 @@ pub enum AppEvent {
     KeyPressed(winit::event::VirtualKeyCode),
     MouseInput(winit::event::MouseButton),
     Resized(winit::dpi::PhysicalSize<u32>),
+    ScaleFactorChanged(winit::dpi::PhysicalSize<u32>),
+    RedrawRequested,
+    RedrawEventsCleared,
     Closed,
-    // Add other event types as necessary
 }
 
 impl AppEvent {
     fn from_event(event: &Event<'_, ()>, win_id: &WindowId) -> Option<Self> {
         match event {
-            Event::WindowEvent { event: WindowEvent::KeyboardInput { input, .. }, window_id } 
-                if window_id == win_id => {
-                    input.virtual_keycode.map(AppEvent::KeyPressed)
-                },
-            Event::WindowEvent { event: WindowEvent::MouseInput { button, .. }, window_id }
-                if window_id == win_id => {
-                    Some(AppEvent::MouseInput(*button))
-                },
-            Event::WindowEvent { event: WindowEvent::Resized(size), window_id }
-                if window_id == win_id => {
-                    Some(AppEvent::Resized(*size))
-                },
-            Event::WindowEvent { event: WindowEvent::CloseRequested, window_id }
-                if window_id == win_id => {
-                    Some(AppEvent::Closed)
-                },
+            Event::WindowEvent {
+                event: WindowEvent::KeyboardInput { input, .. },
+                window_id,
+            } if window_id == win_id => input.virtual_keycode.map(AppEvent::KeyPressed),
+            Event::WindowEvent {
+                event: WindowEvent::MouseInput { button, .. },
+                window_id,
+            } if window_id == win_id => Some(AppEvent::MouseInput(*button)),
+            Event::WindowEvent {
+                event: WindowEvent::Resized(size),
+                window_id,
+            } if window_id == win_id => Some(AppEvent::Resized(*size)),
+            Event::WindowEvent {
+                event: WindowEvent::ScaleFactorChanged { new_inner_size, .. },
+                window_id,
+            } if window_id == win_id => Some(AppEvent::ScaleFactorChanged(**new_inner_size)),
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                window_id,
+            } if window_id == win_id => Some(AppEvent::Closed),
+            Event::RedrawRequested(window_id) if window_id == win_id => {
+                Some(AppEvent::RedrawRequested)
+            }
+            Event::RedrawEventsCleared => Some(AppEvent::RedrawEventsCleared),
             _ => None,
         }
     }
 }
-
 
 pub struct EngineState {
     objects: Vec<i32>,
@@ -82,17 +91,14 @@ pub struct Engine {
     render_handle: Option<JoinHandle<()>>,
     event_tx: Option<Sender<AppEvent>>,
     control_rx: Option<Receiver<ControlFlow>>,
-    win_id: WindowId
+    win_id: WindowId,
 }
 
 unsafe impl Send for Engine {}
 unsafe impl Sync for Engine {}
 
 impl Engine {
-    pub async fn new(
-        graphics: bool,
-        event_loop: EventLoop<()>,
-    ) -> (Self, EventLoop<()>) {
+    pub async fn new(graphics: bool, event_loop: EventLoop<()>) -> (Self, EventLoop<()>) {
         let event_loop_proxy = event_loop.create_proxy();
 
         let (mut renderer_instance, window_id) =
@@ -110,7 +116,7 @@ impl Engine {
             render_handle: None,
             event_tx: Some(event_tx),
             control_rx: Some(control_rx),
-            win_id: window_id
+            win_id: window_id,
         };
 
         if graphics {
@@ -172,33 +178,23 @@ impl Engine {
         self.state.add_static(comp);
     }
 
-    pub fn run(self, event_loop: EventLoop<()>) {
-    let event_tx = self.event_tx.unwrap().clone();
-    let control_rx = self.control_rx.unwrap();
+    pub fn run(mut self, event_loop: EventLoop<()>) {
+        let event_tx = self.event_tx.unwrap().clone();
+        let control_rx = self.control_rx.unwrap();
 
-    event_loop.run(move |event, _, control_flow| {
-        // Convert the winit event to our AppEvent type, if it pertains to the current window
-        // println!("{:?}", AppEvent::from_event(&event, &self.win_id));
-        println!("{:?}", control_flow);
-        if let Some(app_event) = AppEvent::from_event(&event, &self.win_id) {
-            // Send the custom event through the channel
-            // println!("{:?}", app_event);
-            if event_tx.send(app_event).is_err() {
-                println!("Error Sending Event");
-                *control_flow = ControlFlow::Exit;
-                return;
+        event_loop.run(move |event, _, control_flow| {
+            // self.tick();
+            if let Some(app_event) = AppEvent::from_event(&event, &self.win_id) {
+                if event_tx.send(app_event).is_err() {
+                    *control_flow = ControlFlow::Exit;
+                    return;
+                }
             }
-        }
 
-        // Control flow management
-        match control_rx.try_recv() {
-            Ok(new_control_flow) => *control_flow = new_control_flow,
-            Err(_) => *control_flow = ControlFlow::Wait,
-        }
-    });
-}
-
-
-
-
+            match control_rx.try_recv() {
+                Ok(new_control_flow) => *control_flow = new_control_flow,
+                Err(_) => *control_flow = ControlFlow::Wait,
+            }
+        });
+    }
 }

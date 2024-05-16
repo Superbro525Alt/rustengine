@@ -16,11 +16,8 @@ fn main() {
 }
 
 async fn run() {
-    let (mut e, mut eventloop) = engine::state::Engine::new(
-        true,
-        EventLoopBuilder::<()>::with_user_event().build(),
-    )
-    .await;
+    let (mut e, mut eventloop) =
+        engine::state::Engine::new(true, EventLoopBuilder::<()>::with_user_event().build()).await;
 
     let g1 = e.add_object(engine::gameobject::make_base_game_object(String::from(
         "thing1",
