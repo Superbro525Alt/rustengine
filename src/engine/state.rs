@@ -1,18 +1,52 @@
 use crate::engine::camera;
+use crate::engine::component;
 use crate::engine::gameobject;
 use crate::engine::renderer;
 use crate::engine::static_component;
-use crate::engine::component;
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{self, Sender};
 use std::thread;
-use std::thread::{JoinHandle};
+use std::thread::JoinHandle;
 
 use winit::{
     event::*,
-    event_loop::{ControlFlow, EventLoop, EventLoopWindowTarget},
-    window::{Window, WindowBuilder},
+    event_loop::{ControlFlow, EventLoop, EventLoopProxy},
+    window::{Window, WindowBuilder, WindowId},
 };
+
+#[derive(Debug, Clone)]
+pub enum AppEvent {
+    KeyPressed(winit::event::VirtualKeyCode),
+    MouseInput(winit::event::MouseButton),
+    Resized(winit::dpi::PhysicalSize<u32>),
+    Closed,
+    // Add other event types as necessary
+}
+
+impl AppEvent {
+    fn from_event(event: &Event<'_, ()>, win_id: &WindowId) -> Option<Self> {
+        match event {
+            Event::WindowEvent { event: WindowEvent::KeyboardInput { input, .. }, window_id } 
+                if window_id == win_id => {
+                    input.virtual_keycode.map(AppEvent::KeyPressed)
+                },
+            Event::WindowEvent { event: WindowEvent::MouseInput { button, .. }, window_id }
+                if window_id == win_id => {
+                    Some(AppEvent::MouseInput(*button))
+                },
+            Event::WindowEvent { event: WindowEvent::Resized(size), window_id }
+                if window_id == win_id => {
+                    Some(AppEvent::Resized(*size))
+                },
+            Event::WindowEvent { event: WindowEvent::CloseRequested, window_id }
+                if window_id == win_id => {
+                    Some(AppEvent::Closed)
+                },
+            _ => None,
+        }
+    }
+}
+
 
 pub struct EngineState {
     objects: Vec<i32>,
@@ -27,7 +61,7 @@ impl EngineState {
         }
     }
 
-    pub fn objects(&mut self) -> &Vec<i32> {
+    pub fn objects(&self) -> &Vec<i32> {
         &self.objects
     }
 
@@ -42,65 +76,76 @@ impl EngineState {
 
 pub struct Engine {
     pub state: EngineState,
-    pub renderer: Arc<Mutex<renderer::Renderer>>, 
-    pub event_loop: EventLoop<()>,
+    pub renderer: Arc<Mutex<renderer::Renderer>>,
     pub graphics: bool,
+    pub event_loop_proxy: EventLoopProxy<()>,
     render_handle: Option<JoinHandle<()>>,
-    event_tx: Option<Sender<Event<()>>>,
-    control_rx: Option<mpsc::Receiver<ControlFlow>>,
+    event_tx: Option<Sender<AppEvent>>,
+    control_rx: Option<Receiver<ControlFlow>>,
+    win_id: WindowId
 }
 
 unsafe impl Send for Engine {}
 unsafe impl Sync for Engine {}
 
 impl Engine {
-    pub async fn new(graphics: bool) -> Self {
-        let (renderer, event_loop) = renderer::Renderer::new(String::from("Engine"), 800, 600).await;
-        let renderer = Arc::new(Mutex::new(renderer));
+    pub async fn new(
+        graphics: bool,
+        event_loop: EventLoop<()>,
+    ) -> (Self, EventLoop<()>) {
+        let event_loop_proxy = event_loop.create_proxy();
 
-        let (event_tx, event_rx) = mpsc::channel();
-        let (control_tx, control_rx) = mpsc::channel();
+        let (mut renderer_instance, window_id) =
+            renderer::Renderer::new(String::from("Engine"), 800, 600, &event_loop).await;
+        let renderer = Arc::new(Mutex::new(renderer_instance));
 
-        let mut engine = Self {
+        let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
+        let (control_tx, control_rx) = mpsc::channel::<ControlFlow>();
+
+        let engine = Self {
             state: EngineState::new(),
             renderer: renderer.clone(),
-            event_loop,
             graphics,
+            event_loop_proxy,
             render_handle: None,
             event_tx: Some(event_tx),
             control_rx: Some(control_rx),
+            win_id: window_id
         };
 
         if graphics {
             let renderer_clone = renderer.clone();
-            engine.render_handle = Some(thread::spawn(move || {
+            thread::spawn(move || {
                 renderer::Renderer::run(renderer_clone, event_rx, control_tx);
-            }));
+            });
         }
 
-        engine
+        (engine, event_loop)
     }
 
-    pub fn state(&mut self) -> &EngineState {
+    pub fn state(&self) -> &EngineState {
         &self.state
     }
 
-    pub fn renderer(&mut self) -> Arc<Mutex<renderer::Renderer>> {
+    pub fn renderer(&self) -> Arc<Mutex<renderer::Renderer>> {
         self.renderer.clone()
     }
 
     pub fn render(&mut self, data: component::RenderOutput) -> usize {
-        self.renderer.lock().unwrap().render_queue.lock().unwrap().push(data);
-        let pos = self.renderer.lock().unwrap().render_queue.lock().unwrap().len() - 1;
-        pos 
+        let mut renderer = self.renderer.lock().unwrap();
+        let mut render_queue = renderer.render_queue.lock().unwrap();
+        render_queue.push(data);
+        render_queue.len() - 1
     }
 
     pub fn remove_from_render_queue(&mut self, reference: usize) {
-        self.renderer.lock().unwrap().render_queue.lock().unwrap().remove(reference); 
+        let mut renderer = self.renderer.lock().unwrap();
+        let mut render_queue = renderer.render_queue.lock().unwrap();
+        render_queue.remove(reference);
     }
-    
-    pub fn input_data(&mut self) -> component::InputData {
-        component::InputData{}
+
+    pub fn input_data(&self) -> component::InputData {
+        component::InputData {}
     }
 
     pub fn tick(&mut self) {
@@ -123,29 +168,37 @@ impl Engine {
         id
     }
 
-    pub fn add_static(&mut self, comp: Arc<dyn static_component::StaticComponent>) {
-        // self.state.add_static(Arc::new(Mutex::new(comp)));
+    pub fn add_static(&mut self, comp: Arc<Mutex<dyn static_component::StaticComponent>>) {
+        self.state.add_static(comp);
     }
 
-    pub fn run(&mut self) {
-        if self.graphics {
-            let event_tx = self.event_tx.take().unwrap();
-            let control_rx = self.control_rx.take().unwrap();
-            let event_loop = &self.event_loop;
+    pub fn run(self, event_loop: EventLoop<()>) {
+    let event_tx = self.event_tx.unwrap().clone();
+    let control_rx = self.control_rx.unwrap();
 
-            event_loop.run(move |event, _, control_flow| {
-                if event_tx.send(event).is_err() {
-                    *control_flow = ControlFlow::Exit;
-                    return;
-                }
-
-                // Check control flow from renderer
-                match control_rx.try_recv() {
-                    Ok(new_control_flow) => *control_flow = new_control_flow,
-                    Err(_) => *control_flow = ControlFlow::Wait,
-                }
-            });
+    event_loop.run(move |event, _, control_flow| {
+        // Convert the winit event to our AppEvent type, if it pertains to the current window
+        // println!("{:?}", AppEvent::from_event(&event, &self.win_id));
+        println!("{:?}", control_flow);
+        if let Some(app_event) = AppEvent::from_event(&event, &self.win_id) {
+            // Send the custom event through the channel
+            // println!("{:?}", app_event);
+            if event_tx.send(app_event).is_err() {
+                println!("Error Sending Event");
+                *control_flow = ControlFlow::Exit;
+                return;
+            }
         }
-    }
+
+        // Control flow management
+        match control_rx.try_recv() {
+            Ok(new_control_flow) => *control_flow = new_control_flow,
+            Err(_) => *control_flow = ControlFlow::Wait,
+        }
+    });
 }
 
+
+
+
+}

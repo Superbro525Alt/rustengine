@@ -1,10 +1,10 @@
 use crate::engine::component;
-use std::any::Any;
-use crate::engine::component::{TickBehavior, ComponentTrait};
+use crate::engine::component::{ComponentTrait, TickBehavior};
 use crate::engine::state::Engine;
-use downcast_rs::Downcast;
 use colored::Colorize;
+use downcast_rs::Downcast;
 use lazy_static::lazy_static;
+use std::any::Any;
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::process::exit;
@@ -85,7 +85,7 @@ pub struct GameObject {
     pub id: i32,
     pub components: Vec<Arc<Mutex<component::ComponentWrapper>>>,
     pub state: GameObjectState,
-    render_reference: Option<usize>
+    render_reference: Option<usize>,
 }
 
 impl GameObject {
@@ -101,7 +101,7 @@ impl GameObject {
             id,
             components,
             state,
-            render_reference: None
+            render_reference: None,
         }));
         GAME_OBJECT_REGISTRY
             .lock()
@@ -157,7 +157,9 @@ impl GameObject {
     //     });
     // }
 
-    pub fn get_component<T: ComponentTrait + 'static>(&self) -> Option<Arc<Mutex<dyn component::ComponentTrait>>> {
+    pub fn get_component<T: ComponentTrait + 'static>(
+        &self,
+    ) -> Option<Arc<Mutex<dyn component::ComponentTrait>>> {
         self.components.iter().find_map(|wrapper| {
             let wrapper = wrapper.lock().unwrap();
             if wrapper.component.as_any().downcast_ref::<T>().is_some() {
@@ -169,28 +171,36 @@ impl GameObject {
     }
 
     pub fn input_data(&mut self) -> component::InputData {
-        component::InputData{}
+        component::InputData {}
     }
 
     pub fn tick_self(&mut self, engine: &mut Engine) {
         for component in &self.components.clone() {
             let mut comp = component.lock().unwrap();
             let mut render_data = comp.tick(Some(&self.input_data()));
-            println!("render first step: {:?}", render_data.as_mut().expect("nahh").obj.desc_raw());
+            println!(
+                "render first step: {:?}",
+                render_data.as_mut().expect("nahh").obj.desc_raw()
+            );
             if render_data.is_some() {
                 println!("renderdata is some");
                 if self.state.active {
                     println!("active");
                     if self.render_reference.is_some() {
-                        engine.remove_from_render_queue(self.render_reference.expect("no render reference"));
+                        engine.remove_from_render_queue(
+                            self.render_reference.expect("no render reference"),
+                        );
                     }
 
                     println!("ahhh");
 
-                    self.render_reference = Some(engine.render(render_data.take().expect("get good")));
+                    self.render_reference =
+                        Some(engine.render(render_data.take().expect("get good")));
                     println!("rendering");
                 } else {
-                    engine.remove_from_render_queue(self.render_reference.expect("no render reference"));
+                    engine.remove_from_render_queue(
+                        self.render_reference.expect("no render reference"),
+                    );
                 }
             }
 
@@ -264,15 +274,13 @@ pub fn add_component(object: i32, comp: Arc<Mutex<component::ComponentWrapper>>)
         match &*variant_lock {
             component::TickVariant::Render(renderer) => {
                 TypeId::of::<dyn component::RenderTickBehavior>()
-            },
+            }
             component::TickVariant::Default(renderer) => {
                 TypeId::of::<dyn component::RenderTickBehavior>()
-            },
+            }
             component::TickVariant::Input(renderer) => {
                 TypeId::of::<dyn component::RenderTickBehavior>()
-            },
-
-            // Add other match arms if other variants exist
+            } // Add other match arms if other variants exist
         }
     };
 
@@ -281,10 +289,15 @@ pub fn add_component(object: i32, comp: Arc<Mutex<component::ComponentWrapper>>)
             let existing_comp_lock = existing_comp.lock().unwrap();
             let existing_variant_lock = existing_comp_lock.ticker.lock().unwrap();
             match &*existing_variant_lock {
-                component::TickVariant::Render(_) => TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id,
-                component::TickVariant::Default(_) => TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id,
-                component::TickVariant::Input(_) => TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id,
-                // Match other variants similarly
+                component::TickVariant::Render(_) => {
+                    TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id
+                }
+                component::TickVariant::Default(_) => {
+                    TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id
+                }
+                component::TickVariant::Input(_) => {
+                    TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id
+                } // Match other variants similarly
             }
         })
     });
@@ -318,10 +331,15 @@ pub fn has_component<T: component::ComponentTrait + 'static>(obj_id: i32) -> boo
             let existing_comp_lock = existing_comp.lock().unwrap();
             let existing_variant_lock = existing_comp_lock.ticker.lock().unwrap();
             match &*existing_variant_lock {
-                component::TickVariant::Render(_) => TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id,
-                component::TickVariant::Default(_) => TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id,
-                component::TickVariant::Input(_) => TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id,
-                // Match other variants similarly
+                component::TickVariant::Render(_) => {
+                    TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id
+                }
+                component::TickVariant::Default(_) => {
+                    TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id
+                }
+                component::TickVariant::Input(_) => {
+                    TypeId::of::<dyn component::RenderTickBehavior>() == comp_type_id
+                } // Match other variants similarly
             }
         })
     });
@@ -329,16 +347,16 @@ pub fn has_component<T: component::ComponentTrait + 'static>(obj_id: i32) -> boo
     already_exists
 }
 
-
-pub fn get_component<T: component::ComponentTrait + 'static>(obj_id: i32)
-{
+pub fn get_component<T: component::ComponentTrait + 'static>(obj_id: i32) {
     if has_component::<T>(obj_id) {
         to_object(obj_id, |obj| {
             obj.get_component::<T>();
         })
     } else {
-        eprintln!("ERROR: The object with id {} does not contain the requested component", obj_id);
+        eprintln!(
+            "ERROR: The object with id {} does not contain the requested component",
+            obj_id
+        );
         exit(1);
     }
 }
-

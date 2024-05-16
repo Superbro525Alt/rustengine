@@ -36,7 +36,7 @@ pub struct State {
     pub camera_buffer: wgpu::Buffer,
     pub camera_bind_group: wgpu::BindGroup,
     meshes: Vec<Mesh>,
-    bg: [f32; 3],
+    pub bg: [f32; 3],
 }
 
 pub trait Backend {
@@ -268,9 +268,7 @@ impl Backend for State {
                 }
                 _ => false,
             },
-            WindowEvent::CursorMoved { position, .. } => {
-                false
-            }
+            WindowEvent::CursorMoved { position, .. } => false,
             _ => false,
         }
     }
@@ -280,6 +278,7 @@ impl Backend for State {
     // }
 
     fn update(&mut self, new_mesh_data: Vec<(Vec<Vertex>, Vec<u16>)>, bg: [f32; 3]) {
+        println!("{:?}", bg);
         self.camera_uniform.update(&self.camera);
         self.queue.write_buffer(
             &self.camera_buffer,

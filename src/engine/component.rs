@@ -1,10 +1,10 @@
+use crate::engine::graphics_backend::object::Object;
+use crate::engine::graphics_backend::vertex::Vertex;
 use downcast_rs::impl_downcast;
 use downcast_rs::Downcast;
 use serde_json::Value;
 use std::any::{self, Any, TypeId};
 use std::sync::{Arc, Mutex};
-use crate::engine::graphics_backend::object::Object;
-use crate::engine::graphics_backend::vertex::Vertex;
 
 #[derive(Clone)]
 pub struct ComponentState {
@@ -65,7 +65,7 @@ pub trait InputTickBehavior: Send + Sync {
 }
 
 pub trait RenderTickBehavior: Send + Sync {
-    fn render_tick(&mut self) -> RenderOutput;  
+    fn render_tick(&mut self) -> RenderOutput;
 }
 
 // impl_downcast!(InputTickBehavior);
@@ -84,7 +84,6 @@ pub enum TickVariant {
     Default(Arc<Mutex<dyn TickBehavior>>),
 }
 
-
 impl TickVariant {
     pub fn component_type(&self) -> ComponentType {
         match self {
@@ -102,7 +101,7 @@ impl TickVariant {
     //     }
     // }
 
-     pub fn tick(&mut self, input: Option<&InputData>) -> Option<RenderOutput> {
+    pub fn tick(&mut self, input: Option<&InputData>) -> Option<RenderOutput> {
         match self {
             TickVariant::Input(behavior) => {
                 if let Some(input) = input {
@@ -110,18 +109,15 @@ impl TickVariant {
                     behavior.lock().unwrap().tick_with_input(input);
                 }
                 None
-            },
-            TickVariant::Render(behavior) => {
-                Some(behavior.lock().unwrap().render_tick())
-            },
+            }
+            TickVariant::Render(behavior) => Some(behavior.lock().unwrap().render_tick()),
             TickVariant::Default(behavior) => {
                 behavior.lock().unwrap().tick();
                 None
-            },
+            }
         }
     }
 }
-
 
 pub struct ComponentWrapper {
     pub component: Arc<Mutex<dyn ComponentTrait>>,
@@ -141,7 +137,7 @@ impl ComponentWrapper {
 
 pub fn create_component_wrapper(
     component: Arc<Mutex<dyn ComponentTrait>>,
-    tick_variant: Arc<Mutex<TickVariant>>
+    tick_variant: Arc<Mutex<TickVariant>>,
 ) -> Arc<Mutex<ComponentWrapper>> {
     Arc::new(Mutex::new(ComponentWrapper::new(component, tick_variant)))
 }
@@ -160,7 +156,11 @@ where
     F: FnMut() + Send + Sync + 'static,
 {
     pub fn new(name: String, tick_behavior: F) -> Arc<Mutex<ComponentWrapper>> {
-        let lambda_component = Arc::new(Mutex::new(Self { name, tick_behavior, state: ComponentState::new() }));
+        let lambda_component = Arc::new(Mutex::new(Self {
+            name,
+            tick_behavior,
+            state: ComponentState::new(),
+        }));
         let tick_variant = Arc::new(Mutex::new(TickVariant::Default(lambda_component.clone())));
 
         Arc::new(Mutex::new(ComponentWrapper {
