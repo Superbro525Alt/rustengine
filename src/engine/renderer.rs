@@ -15,6 +15,8 @@ use winit::{
 
 use crate::engine::state::AppEvent;
 
+use super::state::FrameData;
+
 pub struct Renderer {
     pub title: String,
     pub width: u32,
@@ -22,6 +24,7 @@ pub struct Renderer {
     pub render_queue: Arc<Mutex<Vec<component::RenderOutput>>>,
     pub window: Arc<Mutex<Window>>,
     backend: State,
+    pub dt: Option<Duration>,
 }
 
 impl Renderer {
@@ -49,6 +52,7 @@ impl Renderer {
                 render_queue: Arc::new(Mutex::new(Vec::new())),
                 window: window.clone(),
                 backend,
+                dt: None,
             },
             window.clone().lock().unwrap().id().clone(),
         )
@@ -58,12 +62,15 @@ impl Renderer {
         renderer: Arc<Mutex<Self>>,
         rx: Receiver<AppEvent>,
         control_tx: Sender<ControlFlow>,
+        frame_data_tx: Sender<FrameData>,
     ) {
         let mut rng = rand::thread_rng(); // Assuming used elsewhere
         let mut t = std::time::SystemTime::now();
         let mut times: Vec<std::time::SystemTime> = vec![];
 
         loop {
+            let dt = renderer.lock().unwrap().dt;
+            frame_data_tx.send(FrameData { dt });
             match rx.recv() {
                 Ok(event) => match event {
                     AppEvent::KeyPressed(key_code) => {
@@ -91,15 +98,19 @@ impl Renderer {
                         renderer.lock().unwrap().backend.resize(new_inner_size)
                     }
                     AppEvent::RedrawRequested => {
+                        renderer.lock().unwrap().dt = Some(t.elapsed().unwrap());
                         println!("Frame Time: {:?}", t.elapsed().unwrap());
                         t = std::time::SystemTime::now();
                         times.push(t);
                         let queue = renderer.lock().unwrap().render_queue.clone();
                         renderer.lock().unwrap().backend.update(
-                            queue.lock().unwrap().iter_mut().map(|out| out.obj.desc_raw()).collect(),
-                            [
-                                0.0, 0.0, 0.0,
-                            ],
+                            queue
+                                .lock()
+                                .unwrap()
+                                .iter_mut()
+                                .map(|out| out.obj.desc_raw())
+                                .collect(),
+                            [0.0, 0.0, 0.0],
                         );
                         let render_result = renderer.lock().unwrap().backend.render();
                         match render_result {

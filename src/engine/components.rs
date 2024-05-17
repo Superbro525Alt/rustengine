@@ -1,11 +1,12 @@
+use crate::engine::component;
 use crate::engine::component::{
     ComponentState, ComponentTrait, ComponentWrapper, InputData, InputTickBehavior, RenderOutput,
     RenderTickBehavior, TickBehavior, TickVariant,
 };
+use crate::engine::gameobject::GameObject;
 use crate::engine::graphics_backend::primitives::Cube;
 use std::sync::{Arc, Mutex};
-use crate::engine::gameobject::GameObject;
-use crate::engine::component;
+use std::time::Duration;
 
 pub struct RenderComponent {
     name: String,
@@ -23,7 +24,7 @@ impl ComponentTrait for RenderComponent {
 }
 
 impl RenderTickBehavior for RenderComponent {
-    fn render_tick(&mut self, obj: &mut GameObject) -> RenderOutput {
+    fn render_tick(&mut self, obj: &mut GameObject, dt: Duration) -> RenderOutput {
         // format!("{} performed a render tick", self.name)
         let mut out = RenderOutput {
             obj: Box::new(Cube::new(0.1, [1.0, 0.0, 0.0])),
@@ -64,7 +65,7 @@ impl ComponentTrait for RenderComponent1 {
 }
 
 impl RenderTickBehavior for RenderComponent1 {
-    fn render_tick(&mut self, obj: &mut GameObject) -> RenderOutput {
+    fn render_tick(&mut self, obj: &mut GameObject, dt: Duration) -> RenderOutput {
         // format!("{} performed a render tick", self.name)
         let mut out = RenderOutput {
             obj: Box::new(Cube::new(0.1, [1.0, 0.0, 0.0])),
@@ -88,7 +89,6 @@ impl RenderComponent1 {
     }
 }
 
-
 pub struct InputComponent {
     name: String,
     state: ComponentState,
@@ -105,7 +105,7 @@ impl ComponentTrait for InputComponent {
 }
 
 impl InputTickBehavior for InputComponent {
-    fn tick_with_input(&mut self, input: &InputData, obj: &mut GameObject) {}
+    fn tick_with_input(&mut self, input: &InputData, obj: &mut GameObject, dt: Duration) {}
 }
 
 impl InputComponent {

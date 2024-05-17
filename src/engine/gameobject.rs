@@ -9,6 +9,7 @@ use std::any::TypeId;
 use std::collections::HashMap;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 pub type MutexdGameObject = Arc<Mutex<GameObject>>;
 
@@ -151,15 +152,15 @@ impl GameObject {
         let comps = self.components.clone();
         for comp_arc in comps {
             let mut comp_lock = comp_arc.try_lock().ok()?;
-            
+
             // Attempt to downcast the component under the MutexGuard's scope
             if let Some(component) = (&mut *comp_lock).as_any_mut().downcast_mut::<T>() {
-                f(component);  // Execute the closure with the mutable reference
+                f(component); // Execute the closure with the mutable reference
                 drop(comp_lock);
-                return Some(());  // Return early on success
+                return Some(()); // Return early on success
             }
         }
-        
+
         // If no component of type T was found and processed
         None
     }
@@ -184,7 +185,11 @@ impl GameObject {
     pub fn tick_self(&mut self, engine: &mut Engine) {
         for component in &self.components.clone() {
             let mut comp = component.lock().unwrap();
-            let mut render_data = comp.tick(Some(&self.input_data()), self);
+            let mut render_data = comp.tick(
+                Some(&self.input_data()),
+                self,
+                engine.dt.unwrap_or(Duration::from_secs(0)),
+            );
             // println!(
             //     "render first step: {:?}",
             //     render_data.as_mut().expect("nahh").obj.desc_raw()
@@ -227,7 +232,7 @@ impl GameObject {
 
 pub fn make_base_game_object(name: String) -> Arc<Mutex<GameObject>> {
     let g = GameObject::new(name, vec![], GameObjectState::new(true, None, vec![]));
-    
+
     let id = g.clone().lock().unwrap().id().clone();
     add_component(id, component::Transform::new());
 
@@ -276,7 +281,9 @@ pub fn _internal_to_object<T, F: FnOnce(&GameObject) -> T>(obj_id: i32, func: F)
 pub fn add_component(object: i32, comp: Arc<Mutex<component::ComponentWrapper>>) {
     let comp_type_id = comp.type_id();
 
-    let game_objects = GAME_OBJECT_REGISTRY.try_lock().expect("Registry lock failed");
+    let game_objects = GAME_OBJECT_REGISTRY
+        .try_lock()
+        .expect("Registry lock failed");
     let game_object = match game_objects.get(&object) {
         Some(obj_arc) => obj_arc.lock().expect("GameObject lock failed"),
         None => {
@@ -284,8 +291,6 @@ pub fn add_component(object: i32, comp: Arc<Mutex<component::ComponentWrapper>>)
             return;
         }
     };
-
-
 
     let already_exists = game_object.components.iter().any(|comp_arc| {
         let comp = comp_arc.lock().unwrap();
@@ -296,8 +301,17 @@ pub fn add_component(object: i32, comp: Arc<Mutex<component::ComponentWrapper>>)
     drop(game_objects);
 
     if already_exists {
-        let game_object_name = GameObject::find_by_id(object).unwrap().try_lock().unwrap().name().to_string();
-        eprintln!("ERROR: GameObject {} already has component {}", game_object_name, comp.lock().unwrap().component.lock().unwrap().name());
+        let game_object_name = GameObject::find_by_id(object)
+            .unwrap()
+            .try_lock()
+            .unwrap()
+            .name()
+            .to_string();
+        eprintln!(
+            "ERROR: GameObject {} already has component {}",
+            game_object_name,
+            comp.lock().unwrap().component.lock().unwrap().name()
+        );
         exit(1);
     } else {
         to_object(object, |obj| {
@@ -312,7 +326,7 @@ pub fn has_component<T: component::ComponentTrait + 'static>(obj_id: i32) -> boo
         Some(obj_arc) => obj_arc.lock().expect("GameObject lock failed"),
         None => {
             eprintln!("ERROR: No object with id {}", obj_id);
-            return false;  // Optionally handle this more gracefully
+            return false; // Optionally handle this more gracefully
         }
     };
 

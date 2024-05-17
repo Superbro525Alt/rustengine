@@ -85,6 +85,10 @@ impl EngineState {
     }
 }
 
+pub struct FrameData {
+    pub dt: Option<Duration>,
+}
+
 pub struct Engine {
     pub state: EngineState,
     pub renderer: Arc<Mutex<renderer::Renderer>>,
@@ -93,7 +97,9 @@ pub struct Engine {
     render_handle: Option<JoinHandle<()>>,
     event_tx: Option<Sender<AppEvent>>,
     control_rx: Option<Receiver<ControlFlow>>,
+    frame_data_rx: Option<Receiver<FrameData>>,
     win_id: WindowId,
+    pub dt: Option<Duration>,
 }
 
 unsafe impl Send for Engine {}
@@ -109,6 +115,7 @@ impl Engine {
 
         let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
         let (control_tx, control_rx) = mpsc::channel::<ControlFlow>();
+        let (frame_data_tx, frame_data_rx) = mpsc::channel::<FrameData>();
 
         let engine = Self {
             state: EngineState::new(),
@@ -118,13 +125,15 @@ impl Engine {
             render_handle: None,
             event_tx: Some(event_tx),
             control_rx: Some(control_rx),
+            frame_data_rx: Some(frame_data_rx),
             win_id: window_id,
+            dt: None,
         };
 
         if graphics {
             let renderer_clone = renderer.clone();
             thread::spawn(move || {
-                renderer::Renderer::run(renderer_clone, event_rx, control_tx);
+                renderer::Renderer::run(renderer_clone, event_rx, control_tx, frame_data_tx);
             });
         }
 
@@ -182,32 +191,38 @@ impl Engine {
 
     pub fn run(engine: Arc<Mutex<Self>>, event_loop: EventLoop<()>) {
         // println!("running");
-    let self_clone = engine.clone();
-    thread::spawn(move || {
-        loop {
-            thread::sleep(Duration::from_millis(16)); // Adjust timing as needed, e.g., ~60 Hz
-            let mut engine = self_clone.lock().unwrap();
-            engine.tick(); // Perform periodic update
-        }
-    });
-
-    let event_tx = engine.lock().unwrap().event_tx.take().unwrap();
-    let control_rx = engine.lock().unwrap().control_rx.take().unwrap();
-
-    let win_id = engine.lock().unwrap().win_id;
-
-    event_loop.run(move |event, _, control_flow| {
-        if let Some(app_event) = AppEvent::from_event(&event, &win_id) {
-            if event_tx.send(app_event).is_err() {
-                *control_flow = ControlFlow::Exit;
-                return;
+        let self_clone = engine.clone();
+        thread::spawn(move || {
+            loop {
+                thread::sleep(Duration::from_millis(16)); // Adjust timing as needed, e.g., ~60 Hz
+                let mut engine = self_clone.lock().unwrap();
+                engine.tick(); // Perform periodic update
             }
-        }
+        });
 
-        match control_rx.try_recv() {
-            Ok(new_control_flow) => *control_flow = new_control_flow,
-            Err(_) => *control_flow = ControlFlow::Wait,
-        }
-    });
-}
+        let event_tx = engine.lock().unwrap().event_tx.take().unwrap();
+        let control_rx = engine.lock().unwrap().control_rx.take().unwrap();
+        let frame_data_rx = engine.lock().unwrap().frame_data_rx.take().unwrap();
+
+        let win_id = engine.lock().unwrap().win_id;
+
+        event_loop.run(move |event, _, control_flow| {
+            if let Some(app_event) = AppEvent::from_event(&event, &win_id) {
+                if event_tx.send(app_event).is_err() {
+                    *control_flow = ControlFlow::Exit;
+                    return;
+                }
+            }
+
+            match control_rx.try_recv() {
+                Ok(new_control_flow) => *control_flow = new_control_flow,
+                Err(_) => *control_flow = ControlFlow::Wait,
+            }
+
+            match frame_data_rx.try_recv() {
+                Ok(frame_data) => engine.lock().unwrap().dt = frame_data.dt,
+                Err(_) => {}
+            }
+        });
+    }
 }

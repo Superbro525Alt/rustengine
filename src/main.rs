@@ -24,9 +24,8 @@ async fn run() {
 
     engine::gameobject::add_component(
         g1,
-        engine::components::RenderComponent1::new(String::from("i")),
+        engine::components::RenderComponent::new(String::from("i")),
     );
-
 
     engine::state::Engine::run(Arc::new(Mutex::new(e)), eventloop);
 }
