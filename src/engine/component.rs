@@ -254,7 +254,7 @@ impl InputTickBehavior for CharacterController2D {
         obj.get_component_closure::<Transform>(|transform| {
             let mut new = transform.inner;
             // let dt_conv = (dt.as_millis() as f32) / 100.0;
-            let dt_conv = 1;            
+            let dt_conv = 1.0;            
             for key in input.keys_pressed.iter() {
                 match key {
                     winit::event::VirtualKeyCode::W => new[1] += self.moveamt / dt_conv,

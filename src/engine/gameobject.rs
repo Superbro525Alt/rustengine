@@ -1,5 +1,5 @@
 use crate::engine::component;
-use crate::engine::component::{ComponentTrait, TickBehavior};
+use crate::engine::component::{ComponentTrait, TickBehavior, Transform};
 use crate::engine::state::Engine;
 use colored::Colorize;
 use downcast_rs::Downcast;
@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use crate::engine::collider::Collider;
 
 pub type MutexdGameObject = Arc<Mutex<GameObject>>;
 
@@ -85,6 +86,7 @@ pub struct GameObject {
     pub name: String,
     pub id: i32,
     pub components: Vec<Arc<Mutex<component::ComponentWrapper>>>,
+    pub colliders: Vec<Arc<Mutex<dyn Collider>>>,
     pub state: GameObjectState,
     render_reference: Option<usize>,
 }
@@ -103,6 +105,7 @@ impl GameObject {
             components,
             state,
             render_reference: None,
+            colliders: Vec::new()
         }));
         GAME_OBJECT_REGISTRY
             .lock()
@@ -143,6 +146,45 @@ impl GameObject {
     pub fn add_component(&mut self, component: Arc<Mutex<component::ComponentWrapper>>) {
         self.components.push(component);
     }
+
+    pub fn colliders(&self) -> &[Arc<Mutex<dyn Collider>>] {
+        &self.colliders 
+    }
+
+    pub fn add_collider(&mut self, coll: Arc<Mutex<dyn Collider>>) {
+        self.colliders.push(coll);
+    }
+
+    pub fn colliding_with(&mut self, other: Arc<Mutex<dyn Collider>>, other_pos: collider::Point) -> bool {
+        let mut current_pos: [f32; 3] = [0.0, 0.0, 0.0];
+        self.get_component_closure::<Transform>(|transform| {
+            let current_pos = transform.inner.clone();
+        });
+
+        for coll in self.colliders.iter_mut() {
+            if coll.lock().unwrap().colliding_with(&collider::Point { x: current_pos[0], y: current_pos[1], z: current_pos[2] }, other.clone(), &other_pos) {
+                return true
+            }
+        }
+
+        false
+    }
+
+    pub fn colliding_point(&mut self, other: collider::Point) -> bool {
+        let mut current_pos: [f32; 3] = [0.0, 0.0, 0.0];
+        self.get_component_closure::<Transform>(|transform| {
+            let current_pos = transform.inner.clone();
+        });
+
+        for coll in self.colliders.iter_mut() {
+            if coll.lock().unwrap().colliding_point(&collider::Point { x: current_pos[0], y: current_pos[1], z: current_pos[2] }, &other) {
+                return true
+            }
+        }
+
+        false
+    }
+
 
     pub fn get_component_closure<T>(&mut self, mut f: impl FnMut(&mut T)) -> Option<()>
     where
@@ -358,3 +400,6 @@ pub fn get_component<T: component::ComponentTrait + 'static>(obj_id: i32) {
         exit(1);
     }
 }
+
+
+use super::collider;
