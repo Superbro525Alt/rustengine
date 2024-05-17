@@ -178,22 +178,16 @@ impl GameObject {
         })
     }
 
-    pub fn input_data(&mut self) -> component::InputData {
-        component::InputData {}
-    }
-
     pub fn tick_self(&mut self, engine: &mut Engine) {
         for component in &self.components.clone() {
             let mut comp = component.lock().unwrap();
+
             let mut render_data = comp.tick(
-                Some(&self.input_data()),
+                Some(&engine.input_data()),
                 self,
                 engine.dt.unwrap_or(Duration::from_secs(0)),
             );
-            // println!(
-            //     "render first step: {:?}",
-            //     render_data.as_mut().expect("nahh").obj.desc_raw()
-            // );
+
             if render_data.is_some() {
                 if self.state.active {
                     if self.render_reference.is_some() {

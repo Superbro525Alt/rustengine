@@ -45,7 +45,11 @@ pub enum ComponentType {
     Default,
 }
 
-pub struct InputData;
+pub struct InputData {
+    pub keys_pressed: Vec<winit::event::VirtualKeyCode>,
+    pub mouse_buttons_pressed: Vec<winit::event::MouseButton>,
+    pub mouse_position: (f64, f64),
+}
 
 // #[derive(Clone)]
 pub struct RenderOutput {

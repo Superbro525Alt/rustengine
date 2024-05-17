@@ -19,7 +19,10 @@ use winit::{
 #[derive(Debug, Clone)]
 pub enum AppEvent {
     KeyPressed(winit::event::VirtualKeyCode),
+    KeyReleased(winit::event::VirtualKeyCode),
     MouseInput(winit::event::MouseButton),
+    MouseRelease(winit::event::MouseButton),
+    MouseMoved((f64, f64)),
     Resized(winit::dpi::PhysicalSize<u32>),
     ScaleFactorChanged(winit::dpi::PhysicalSize<u32>),
     RedrawRequested,
@@ -33,11 +36,21 @@ impl AppEvent {
             Event::WindowEvent {
                 event: WindowEvent::KeyboardInput { input, .. },
                 window_id,
-            } if window_id == win_id => input.virtual_keycode.map(AppEvent::KeyPressed),
+            } if window_id == win_id => match input.state {
+                ElementState::Pressed => input.virtual_keycode.map(AppEvent::KeyPressed),
+                ElementState::Released => input.virtual_keycode.map(AppEvent::KeyReleased),
+            },
             Event::WindowEvent {
-                event: WindowEvent::MouseInput { button, .. },
+                event: WindowEvent::MouseInput { button, state, .. },
                 window_id,
-            } if window_id == win_id => Some(AppEvent::MouseInput(*button)),
+            } if window_id == win_id => match state {
+                ElementState::Pressed => Some(AppEvent::MouseInput(*button)),
+                ElementState::Released => Some(AppEvent::MouseRelease(*button)),
+            },
+            Event::WindowEvent {
+                event: WindowEvent::CursorMoved { position, .. },
+                window_id,
+            } if window_id == win_id => Some(AppEvent::MouseMoved((position.x, position.y))),
             Event::WindowEvent {
                 event: WindowEvent::Resized(size),
                 window_id,
@@ -100,6 +113,9 @@ pub struct Engine {
     frame_data_rx: Option<Receiver<FrameData>>,
     win_id: WindowId,
     pub dt: Option<Duration>,
+    keys_pressed: Vec<winit::event::VirtualKeyCode>,
+    mouse_buttons_pressed: Vec<winit::event::MouseButton>,
+    mouse_position: (f64, f64),
 }
 
 unsafe impl Send for Engine {}
@@ -128,6 +144,9 @@ impl Engine {
             frame_data_rx: Some(frame_data_rx),
             win_id: window_id,
             dt: None,
+            keys_pressed: Vec::new(),
+            mouse_buttons_pressed: Vec::new(),
+            mouse_position: (0.0, 0.0),
         };
 
         if graphics {
@@ -162,7 +181,11 @@ impl Engine {
     }
 
     pub fn input_data(&self) -> component::InputData {
-        component::InputData {}
+        component::InputData {
+            keys_pressed: self.keys_pressed.clone(),
+            mouse_buttons_pressed: self.mouse_buttons_pressed.clone(),
+            mouse_position: self.mouse_position,
+        }
     }
 
     pub fn tick(&mut self) {
@@ -208,10 +231,37 @@ impl Engine {
 
         event_loop.run(move |event, _, control_flow| {
             if let Some(app_event) = AppEvent::from_event(&event, &win_id) {
-                if event_tx.send(app_event).is_err() {
+                if event_tx.send(app_event.clone()).is_err() {
                     *control_flow = ControlFlow::Exit;
                     return;
                 }
+
+                let mut engine_lock = engine.lock().unwrap();
+
+                match app_event {
+                    AppEvent::KeyPressed(key) => {
+                        if !engine_lock.keys_pressed.contains(&key) {
+                            engine_lock.keys_pressed.push(key);
+                        }
+                    }
+                    AppEvent::KeyReleased(key) => {
+                        engine_lock.keys_pressed.retain(|&k| k != key);
+                    }
+                    AppEvent::MouseInput(button) => {
+                        if !engine_lock.mouse_buttons_pressed.contains(&button) {
+                            engine_lock.mouse_buttons_pressed.push(button);
+                        }
+                    }
+                    AppEvent::MouseRelease(button) => {
+                        engine_lock.mouse_buttons_pressed.retain(|&b| b != button);
+                    }
+                    AppEvent::MouseMoved(position) => {
+                        engine_lock.mouse_position = position;
+                    }
+                    _ => {}
+                }
+
+                drop(engine_lock);
             }
 
             match control_rx.try_recv() {
