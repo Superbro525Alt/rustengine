@@ -16,11 +16,14 @@ impl BufferDesc {
 pub trait Object: Send + Sync {
     fn desc(&mut self) -> BufferDesc;
     fn move_vertexes(&mut self, pos: [f32; 3]) -> BufferDesc {
-        for v in self.get_vertexes().iter_mut() {
+        let mut vs = self.get_vertexes();
+        for v in vs.iter_mut() {
             v.position[0] += pos[0];
             v.position[1] += pos[1];
             v.position[2] += pos[2];
         }
+
+        self.set_vertexes(vs);
 
         self.desc()
     }
@@ -51,7 +54,7 @@ pub trait Object: Send + Sync {
                 _ => [x, y, z],
             };
         }
-        self.set_vertexes(vertexes);
+        self.set_vertexes(vertexes.to_vec());
         self.desc()
     }
 
@@ -62,7 +65,7 @@ pub trait Object: Send + Sync {
             v.position[1] *= scale;
             v.position[2] *= scale;
         }
-        self.set_vertexes(vertexes);
+        self.set_vertexes(vertexes.to_vec());
         self.desc()
     }
     fn get_vertexes(&mut self) -> Vec<Vertex>;

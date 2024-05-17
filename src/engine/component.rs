@@ -117,7 +117,8 @@ impl TickVariant {
             TickVariant::Input(behavior) => {
                 if let Some(input) = input {
                     // println!("ticking");
-                    behavior.lock().unwrap().tick_with_input(input, obj, dt);
+                                    // println!("ticking input");
+                    behavior.try_lock().unwrap().tick_with_input(input, obj, dt);
                 }
                 None
             }
@@ -242,3 +243,54 @@ impl Transform {
         }))
     }
 }
+
+pub struct CharacterController2D {
+    pub moveamt: f32,
+    pub state: ComponentState
+}
+
+impl InputTickBehavior for CharacterController2D {
+    fn tick_with_input(&mut self, input: &InputData, obj: &mut GameObject, dt: Duration) {
+        obj.get_component_closure::<Transform>(|transform| {
+            let mut new = transform.inner;
+            // let dt_conv = (dt.as_millis() as f32) / 100.0;
+            let dt_conv = 1;            
+            for key in input.keys_pressed.iter() {
+                match key {
+                    winit::event::VirtualKeyCode::W => new[1] += self.moveamt / dt_conv,
+                    winit::event::VirtualKeyCode::S => new[1] -= self.moveamt / dt_conv,
+                    winit::event::VirtualKeyCode::A => new[0] -= self.moveamt / dt_conv,
+                    winit::event::VirtualKeyCode::D => new[0] += self.moveamt / dt_conv,
+                    _ => {}
+                }
+            }
+            transform.inner = new;
+        });
+    }
+}
+
+impl ComponentTrait for CharacterController2D {
+    fn name(&self) -> &str {
+        "CharacterController2D"
+    }
+
+    fn state(&mut self) -> &mut ComponentState {
+        &mut self.state
+    }
+}
+
+impl CharacterController2D {
+    pub fn new() -> Arc<Mutex<ComponentWrapper>> {
+        let controller = Arc::new(Mutex::new(Self {
+            moveamt: 0.01,
+            state: ComponentState::new()
+        }));
+        let tick_variant = Arc::new(Mutex::new(TickVariant::Input(controller.clone())));
+
+        Arc::new(Mutex::new(ComponentWrapper {
+            component: controller as Arc<Mutex<dyn ComponentTrait>>,
+            ticker: tick_variant,
+        }))
+    }
+}
+

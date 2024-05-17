@@ -151,14 +151,24 @@ impl GameObject {
         // Iterate over components
         let comps = self.components.clone();
         for comp_arc in comps {
-            let mut comp_lock = comp_arc.try_lock().ok()?;
+            let mut _comp_lock = comp_arc.try_lock()/*.ok()?*/;
+            
+            let mut comp_lock = match _comp_lock {
+                Ok(lock) => lock,
+                Err(_) => {println!("couldn't get lock"); continue}
+            };
+
+            // println!("could get lock");
 
             // Attempt to downcast the component under the MutexGuard's scope
-            if let Some(component) = (&mut *comp_lock).as_any_mut().downcast_mut::<T>() {
+            // println!("{}", comp_lock.component);
+            if let Some(component) = (&mut *comp_lock.component.lock().unwrap()).as_any_mut().downcast_mut::<T>() {
                 f(component); // Execute the closure with the mutable reference
-                drop(comp_lock);
+                // drop(comp_lock);
                 return Some(()); // Return early on success
             }
+
+            drop(comp_lock);
         }
 
         // If no component of type T was found and processed
@@ -179,7 +189,8 @@ impl GameObject {
     }
 
     pub fn tick_self(&mut self, engine: &mut Engine) {
-        for component in &self.components.clone() {
+        for component in self.components.clone() {
+            // println!("{}", component.lock().unwrap().component.lock().unwrap().name().clone());
             let mut comp = component.lock().unwrap();
 
             let mut render_data = comp.tick(
@@ -187,6 +198,8 @@ impl GameObject {
                 self,
                 engine.dt.unwrap_or(Duration::from_secs(0)),
             );
+
+            drop(comp);
 
             if render_data.is_some() {
                 if self.state.active {

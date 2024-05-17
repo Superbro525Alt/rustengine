@@ -23,8 +23,8 @@ async fn run() {
     );
 
     engine::gameobject::add_component(
-        g1,
-        engine::components::RenderComponent::new(String::from("i")),
+        g1, 
+        engine::component::CharacterController2D::new()
     );
 
     engine::state::Engine::run(Arc::new(Mutex::new(e)), eventloop);
