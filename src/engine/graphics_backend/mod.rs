@@ -20,7 +20,8 @@ pub mod vertex;
 use crate::engine::camera::{Camera, CameraUniform};
 use crate::engine::graphics_backend::mesh::Mesh;
 use crate::engine::graphics_backend::vertex::Vertex;
-use crate::engine::ui::text::{Text, TextOrigin, TextRenderer};
+use crate::engine::ui::{UIRenderer, UIElement, text::{Text, TextOrigin, TextRenderer}};
+
 
 pub struct State {
     pub surface: wgpu::Surface,
@@ -34,11 +35,10 @@ pub struct State {
     pub camera_uniform: CameraUniform,
     pub camera_buffer: wgpu::Buffer,
     pub camera_bind_group: wgpu::BindGroup,
-    pub text_renderer: TextRenderer,
     meshes: Vec<Mesh>,
     pub bg: [f32; 3],
-    pub texts: Vec<Text>,          // Add this line to store text instances
     pub staging_belt: StagingBelt, // Add this line to include the staging belt
+    pub ui_handler: UIRenderer
 }
 
 pub trait Backend {
@@ -179,7 +179,7 @@ impl Backend for State {
             label: Some("Camera Bind Group"),
         });
 
-        let text_renderer = TextRenderer::new(
+        let ui_handler = UIRenderer::new(
             &device,
             &config,
             "./src/engine/graphics_backend/Inter-Medium.ttf",
@@ -201,9 +201,8 @@ impl Backend for State {
             window,
             meshes: Vec::new(),
             bg: [0.0, 0.0, 0.0],
-            text_renderer,
-            texts: Vec::new(), // Initialize the texts field
             staging_belt,
+            ui_handler
         }
     }
 
@@ -279,7 +278,7 @@ impl Backend for State {
             color: [0.0, 0.0, 1.0, 1.0],
             origin: TextOrigin::Center,
         };
-        self.texts.push(example_text); // Add the text to the texts vector
+        self.ui_handler.queue(UIElement::Text(example_text)); // Add the text to the texts vector
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -327,14 +326,12 @@ impl Backend for State {
         } // Drop the render_pass here to release the mutable borrow on encoder
 
         // Render the text
-        for text in &self.texts {
-            self.text_renderer.draw_text(
-                &text,
-                self.config.width as f32,
-                self.config.height as f32,
-            );
-        }
-        self.text_renderer.render(
+        self.ui_handler.draw(
+            self.config.width as f32,
+            self.config.height as f32,
+        );
+
+        self.ui_handler.render(
             &self.device,
             &mut encoder,
             &view,
@@ -349,7 +346,7 @@ impl Backend for State {
         output.present();
 
         // Clear texts after rendering
-        self.texts.clear();
+        self.ui_handler.clear();
         self.staging_belt.finish();
         self.staging_belt.recall();
 
