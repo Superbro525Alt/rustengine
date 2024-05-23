@@ -1,3 +1,5 @@
+use crate::engine::collider;
+use crate::engine::collider::Collider;
 use crate::engine::component;
 use crate::engine::component::{ComponentTrait, TickBehavior, Transform};
 use crate::engine::state::Engine;
@@ -10,7 +12,6 @@ use std::collections::HashMap;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use crate::engine::collider::Collider;
 
 pub type MutexdGameObject = Arc<Mutex<GameObject>>;
 
@@ -105,7 +106,7 @@ impl GameObject {
             components,
             state,
             render_reference: None,
-            colliders: Vec::new()
+            colliders: Vec::new(),
         }));
         GAME_OBJECT_REGISTRY
             .lock()
@@ -148,22 +149,34 @@ impl GameObject {
     }
 
     pub fn colliders(&self) -> &[Arc<Mutex<dyn Collider>>] {
-        &self.colliders 
+        &self.colliders
     }
 
     pub fn add_collider(&mut self, coll: Arc<Mutex<dyn Collider>>) {
         self.colliders.push(coll);
     }
 
-    pub fn colliding_with(&mut self, other: Arc<Mutex<dyn Collider>>, other_pos: collider::Point) -> bool {
+    pub fn colliding_with(
+        &mut self,
+        other: Arc<Mutex<dyn Collider>>,
+        other_pos: collider::Point,
+    ) -> bool {
         let mut current_pos: [f32; 3] = [0.0, 0.0, 0.0];
         self.get_component_closure::<Transform>(|transform| {
             let current_pos = transform.inner.clone();
         });
 
         for coll in self.colliders.iter_mut() {
-            if coll.lock().unwrap().colliding_with(&collider::Point { x: current_pos[0], y: current_pos[1], z: current_pos[2] }, other.clone(), &other_pos) {
-                return true
+            if coll.lock().unwrap().colliding_with(
+                &collider::Point {
+                    x: current_pos[0],
+                    y: current_pos[1],
+                    z: current_pos[2],
+                },
+                other.clone(),
+                &other_pos,
+            ) {
+                return true;
             }
         }
 
@@ -177,14 +190,20 @@ impl GameObject {
         });
 
         for coll in self.colliders.iter_mut() {
-            if coll.lock().unwrap().colliding_point(&collider::Point { x: current_pos[0], y: current_pos[1], z: current_pos[2] }, &other) {
-                return true
+            if coll.lock().unwrap().colliding_point(
+                &collider::Point {
+                    x: current_pos[0],
+                    y: current_pos[1],
+                    z: current_pos[2],
+                },
+                &other,
+            ) {
+                return true;
             }
         }
 
         false
     }
-
 
     pub fn get_component_closure<T>(&mut self, mut f: impl FnMut(&mut T)) -> Option<()>
     where
@@ -194,19 +213,25 @@ impl GameObject {
         let comps = self.components.clone();
         for comp_arc in comps {
             let mut _comp_lock = comp_arc.try_lock()/*.ok()?*/;
-            
+
             let mut comp_lock = match _comp_lock {
                 Ok(lock) => lock,
-                Err(_) => {println!("couldn't get lock"); continue}
+                Err(_) => {
+                    println!("couldn't get lock");
+                    continue;
+                }
             };
 
             // println!("could get lock");
 
             // Attempt to downcast the component under the MutexGuard's scope
             // println!("{}", comp_lock.component);
-            if let Some(component) = (&mut *comp_lock.component.lock().unwrap()).as_any_mut().downcast_mut::<T>() {
+            if let Some(component) = (&mut *comp_lock.component.lock().unwrap())
+                .as_any_mut()
+                .downcast_mut::<T>()
+            {
                 f(component); // Execute the closure with the mutable reference
-                // drop(comp_lock);
+                              // drop(comp_lock);
                 return Some(()); // Return early on success
             }
 
@@ -286,6 +311,37 @@ pub fn make_base_game_object(name: String) -> Arc<Mutex<GameObject>> {
     add_component(id, component::Transform::new());
 
     g
+}
+
+pub fn colliding_with(
+    obj_id: i32,
+    other: Arc<Mutex<dyn Collider>>,
+    other_pos: collider::Point,
+) -> bool {
+    let mut obj_op = GameObject::find_by_id(obj_id);
+    let mut obj = obj_op.expect("no object");
+
+    let mut lock = obj.lock().unwrap();
+
+    lock.colliding_with(other, other_pos)
+}
+
+pub fn colliding_point(obj_id: i32, other: collider::Point) -> bool {
+    let mut obj_op = GameObject::find_by_id(obj_id);
+    let mut obj = obj_op.expect("no object");
+
+    let mut lock = obj.lock().unwrap();
+
+    lock.colliding_point(other)
+}
+
+pub fn add_collider(obj_id: i32, coll: Arc<Mutex<dyn Collider>>) {
+    let mut obj_op = GameObject::find_by_id(obj_id);
+    let obj = obj_op.expect("no object");
+
+    let mut lock = obj.lock().unwrap();
+
+    lock.add_collider(coll);
 }
 
 pub fn reparent(parent_id: i32, child_id: i32) {
@@ -400,6 +456,3 @@ pub fn get_component<T: component::ComponentTrait + 'static>(obj_id: i32) {
         exit(1);
     }
 }
-
-
-use super::collider;

@@ -1,4 +1,5 @@
 use crate::engine::component;
+use crate::engine::graphics_backend::primitives;
 use crate::engine::graphics_backend::{
     object::Object, primitives::Cube, vertex::Vertex, Backend, State,
 };
@@ -110,22 +111,18 @@ impl Renderer {
                                 .iter_mut()
                                 .map(|out| out.obj.desc_raw())
                                 .collect(),
-                            [0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0],
                         );
                         let render_result = renderer.lock().unwrap().backend.render();
                         match render_result {
                             Ok(_) => {}
-                            // Reconfigure the surface if it's lost or outdated
                             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                                // state.resize(state.size)
                                 let size = renderer.lock().unwrap().backend.size;
                                 renderer.lock().unwrap().backend.resize(size);
                             }
-                            // The system is out of memory, we should probably quit
                             Err(wgpu::SurfaceError::OutOfMemory) => {
                                 control_tx.send(ControlFlow::Exit);
                             }
-
                             Err(wgpu::SurfaceError::Timeout) => log::warn!("Surface timeout"),
                         }
                     }

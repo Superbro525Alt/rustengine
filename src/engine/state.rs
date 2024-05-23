@@ -7,6 +7,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
+use std::time::SystemTime;
 use std::time::{Duration, Instant};
 
 use winit::window;
@@ -15,6 +16,8 @@ use winit::{
     event_loop::{ControlFlow, EventLoop, EventLoopProxy},
     window::{Window, WindowBuilder, WindowId},
 };
+
+use crate::engine::physics::PhysicsEngine;
 
 #[derive(Debug, Clone)]
 pub enum AppEvent {
@@ -116,6 +119,7 @@ pub struct Engine {
     keys_pressed: Vec<winit::event::VirtualKeyCode>,
     mouse_buttons_pressed: Vec<winit::event::MouseButton>,
     mouse_position: (f64, f64),
+    pub physics_engine: PhysicsEngine,
 }
 
 unsafe impl Send for Engine {}
@@ -147,6 +151,7 @@ impl Engine {
             keys_pressed: Vec::new(),
             mouse_buttons_pressed: Vec::new(),
             mouse_position: (0.0, 0.0),
+            physics_engine: PhysicsEngine::new(0.1),
         };
 
         if graphics {
@@ -171,6 +176,9 @@ impl Engine {
         let mut renderer = self.renderer.lock().unwrap();
         let mut render_queue = renderer.render_queue.lock().unwrap();
         render_queue.push(data);
+        if render_queue.len() == 2 {
+            return 0;
+        }
         render_queue.len() - 1
     }
 
@@ -205,6 +213,7 @@ impl Engine {
     pub fn add_object(&mut self, obj: gameobject::MutexdGameObject) -> i32 {
         let id = obj.clone().lock().unwrap().id();
         self.state.add_object(id);
+        self.physics_engine.add_object(id);
         id
     }
 
@@ -220,6 +229,21 @@ impl Engine {
                 thread::sleep(Duration::from_millis(16)); // Adjust timing as needed, e.g., ~60 Hz
                 let mut engine = self_clone.lock().unwrap();
                 engine.tick(); // Perform periodic update
+            }
+        });
+
+        let self_clone_ = engine.clone();
+        thread::spawn(move || {
+            let mut last = SystemTime::now();
+            loop {
+                let mut engine = self_clone_.lock().unwrap();
+                let mut dt = last.elapsed();
+                if dt.is_ok() {
+                    engine.physics_engine.tick(dt.unwrap().as_secs_f32());
+                }
+                last = SystemTime::now();
+
+                drop(engine);
             }
         });
 

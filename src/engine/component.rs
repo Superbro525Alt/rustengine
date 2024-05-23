@@ -116,8 +116,6 @@ impl TickVariant {
         match self {
             TickVariant::Input(behavior) => {
                 if let Some(input) = input {
-                    // println!("ticking");
-                                    // println!("ticking input");
                     behavior.try_lock().unwrap().tick_with_input(input, obj, dt);
                 }
                 None
@@ -246,7 +244,7 @@ impl Transform {
 
 pub struct CharacterController2D {
     pub moveamt: f32,
-    pub state: ComponentState
+    pub state: ComponentState,
 }
 
 impl InputTickBehavior for CharacterController2D {
@@ -254,7 +252,7 @@ impl InputTickBehavior for CharacterController2D {
         obj.get_component_closure::<Transform>(|transform| {
             let mut new = transform.inner;
             // let dt_conv = (dt.as_millis() as f32) / 100.0;
-            let dt_conv = 1.0;            
+            let dt_conv = 1.0;
             for key in input.keys_pressed.iter() {
                 match key {
                     winit::event::VirtualKeyCode::W => new[1] += self.moveamt / dt_conv,
@@ -283,7 +281,7 @@ impl CharacterController2D {
     pub fn new() -> Arc<Mutex<ComponentWrapper>> {
         let controller = Arc::new(Mutex::new(Self {
             moveamt: 0.01,
-            state: ComponentState::new()
+            state: ComponentState::new(),
         }));
         let tick_variant = Arc::new(Mutex::new(TickVariant::Input(controller.clone())));
 
@@ -294,3 +292,40 @@ impl CharacterController2D {
     }
 }
 
+pub struct Rigidbody {
+    pub state: ComponentState,
+    pub friction: f32,
+    pub gravity: bool,
+    pub collisions: bool,
+}
+
+impl ComponentTrait for Rigidbody {
+    fn name(&self) -> &str {
+        "Rigidbody"
+    }
+
+    fn state(&mut self) -> &mut ComponentState {
+        &mut self.state
+    }
+}
+
+impl TickBehavior for Rigidbody {
+    fn tick(&mut self, obj: &mut GameObject, dt: Duration) {}
+}
+
+impl Rigidbody {
+    pub fn new(gravity: bool, collisions: bool) -> Arc<Mutex<ComponentWrapper>> {
+        let s = Arc::new(Mutex::new(Self {
+            state: ComponentState::new(),
+            friction: 0.1,
+            gravity,
+            collisions,
+        }));
+        let tick_variant = Arc::new(Mutex::new(TickVariant::Default(s.clone())));
+
+        Arc::new(Mutex::new(ComponentWrapper {
+            component: s as Arc<Mutex<dyn ComponentTrait>>,
+            ticker: tick_variant,
+        }))
+    }
+}

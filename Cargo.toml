@@ -21,15 +21,10 @@ bytemuck = "1.15.0"
 bytemuck_derive = "1.6.0"
 rand = "0.8.5"
 cgmath = "0.18.0"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-console_error_panic_hook = "0.1.6"
-console_log = "1.0"
-wgpu = { version = "0.18", features = ["webgl"]}
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = [
-    "Document",
-    "Window",
-    "Element",
-]}
+nalgebra = "0.32.5"
+rusttype = "0.9.3"
+opencv = "0.91.3"
+image = "0.25.1"
+glyph_brush = "0.7.8"
+wgpu_glyph = "0.22.0"
+glyph_brush_layout = "0.2.3"

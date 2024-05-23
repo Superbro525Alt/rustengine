@@ -4,13 +4,14 @@ use std::iter;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 use wgpu;
-use wgpu::util::DeviceExt;
+use wgpu::util::{DeviceExt, StagingBelt};
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
-    window::{Window, WindowBuilder},
+    window::Window,
 };
 
+pub mod color;
 pub mod mesh;
 pub mod object;
 pub mod primitives;
@@ -19,9 +20,7 @@ pub mod vertex;
 use crate::engine::camera::{Camera, CameraUniform};
 use crate::engine::graphics_backend::mesh::Mesh;
 use crate::engine::graphics_backend::vertex::Vertex;
-
-// #[cfg(target_arch = "wasm32")]
-// use wasm_bindgen::prelude::*;
+use crate::engine::ui::text::{Text, TextOrigin, TextRenderer};
 
 pub struct State {
     pub surface: wgpu::Surface,
@@ -35,14 +34,16 @@ pub struct State {
     pub camera_uniform: CameraUniform,
     pub camera_buffer: wgpu::Buffer,
     pub camera_bind_group: wgpu::BindGroup,
+    pub text_renderer: TextRenderer,
     meshes: Vec<Mesh>,
     pub bg: [f32; 3],
+    pub texts: Vec<Text>,          // Add this line to store text instances
+    pub staging_belt: StagingBelt, // Add this line to include the staging belt
 }
 
 pub trait Backend {
     async fn new(window: Arc<Mutex<Window>>) -> Self;
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>);
-    fn input(&mut self, event: &WindowEvent) -> bool;
     fn update(&mut self, new_mesh_data: Vec<(Vec<Vertex>, Vec<u16>)>, bg: [f32; 3]);
     fn render(&mut self) -> Result<(), wgpu::SurfaceError>;
 }
@@ -51,29 +52,7 @@ impl Backend for State {
     async fn new(window: Arc<Mutex<Window>>) -> Self {
         let size = window.lock().unwrap().inner_size();
 
-        println!(
-            "Target architecture: {}",
-            if cfg!(target_arch = "x86") {
-                "x86"
-            } else if cfg!(target_arch = "x86_64") {
-                "x86_64"
-            } else if cfg!(target_arch = "arm") {
-                "ARM"
-            } else if cfg!(target_arch = "aarch64") {
-                "ARM64"
-            } else {
-                "unknown"
-            }
-        );
-        // The instance is a handle to our GPU
-        // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default())/* {
-            #[cfg(not(target_arch = "wasm32"))]
-            backends: wgpu::Backends::PRIMARY,
-            #[cfg(target_arch = "wasm32")]
-            backends: wgpu::Backends::GL,
-            ..Default::default()
-        })*/;
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
 
         let surface = unsafe { instance.create_surface(&*window.lock().unwrap()) }.unwrap();
 
@@ -86,29 +65,17 @@ impl Backend for State {
             .await
             .unwrap();
 
-        println!("{:?}", adapter.get_info());
-
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
                     features: adapter.features(),
-                    // WebGL doesn't support all of wgpu's features, so if
-                    // we're building for the web we'll have to disable some.
-                    // limits: if cfg!(target_arch = "wasm32") {
-                    // wgpu::Limits::downlevel_webgl2_defaults()
-                    // } else {
-                    // wgpu::Limits::default()
-                    // },
                     limits: adapter.limits(),
                 },
-                // Some(&std::path::Path::new("trace")), // Trace path
                 None,
             )
             .await
             .unwrap();
-
-        println!("{:?}", device);
 
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps
@@ -212,6 +179,14 @@ impl Backend for State {
             label: Some("Camera Bind Group"),
         });
 
+        let text_renderer = TextRenderer::new(
+            &device,
+            &config,
+            "./src/engine/graphics_backend/Inter-Medium.ttf",
+        );
+
+        let staging_belt = StagingBelt::new(1024);
+
         Self {
             surface,
             device,
@@ -226,6 +201,9 @@ impl Backend for State {
             window,
             meshes: Vec::new(),
             bg: [0.0, 0.0, 0.0],
+            text_renderer,
+            texts: Vec::new(), // Initialize the texts field
+            staging_belt,
         }
     }
 
@@ -239,46 +217,7 @@ impl Backend for State {
         }
     }
 
-    fn input(&mut self, event: &WindowEvent) -> bool {
-        match event {
-            WindowEvent::KeyboardInput {
-                input:
-                    KeyboardInput {
-                        state: ElementState::Pressed,
-                        virtual_keycode: Some(keycode),
-                        ..
-                    },
-                ..
-            } => match keycode {
-                VirtualKeyCode::Up => {
-                    self.camera.position.y += 0.1;
-                    true
-                }
-                VirtualKeyCode::Down => {
-                    self.camera.position.y -= 0.1;
-                    true
-                }
-                VirtualKeyCode::Right => {
-                    self.camera.position.x += 0.1;
-                    true
-                }
-                VirtualKeyCode::Left => {
-                    self.camera.position.x -= 0.1;
-                    true
-                }
-                _ => false,
-            },
-            WindowEvent::CursorMoved { position, .. } => false,
-            _ => false,
-        }
-    }
-
-    // pub fn get_input_data(&mut self) -> component::InputData {
-    //
-    // }
-
     fn update(&mut self, new_mesh_data: Vec<(Vec<Vertex>, Vec<u16>)>, bg: [f32; 3]) {
-        // println!("{:?}", bg);
         self.camera_uniform.update(&self.camera);
         self.queue.write_buffer(
             &self.camera_buffer,
@@ -332,6 +271,15 @@ impl Backend for State {
                 }
             })
             .collect();
+
+        // Example usage of text renderer
+        let example_text = Text {
+            content: String::from("Hello World"),
+            position: cgmath::Point2::new(0.0, 0.0),
+            color: [0.0, 0.0, 1.0, 1.0],
+            origin: TextOrigin::Center,
+        };
+        self.texts.push(example_text); // Add the text to the texts vector
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -362,22 +310,48 @@ impl Backend for State {
                     },
                 })],
                 depth_stencil_attachment: None,
-                occlusion_query_set: None,
                 timestamp_writes: None,
+                occlusion_query_set: None,
             });
 
+            // Render the cubes
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+
             for mesh in &self.meshes {
-                render_pass.set_pipeline(&self.render_pipeline);
-                render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 render_pass
                     .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                 render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
             }
-        }
+        } // Drop the render_pass here to release the mutable borrow on encoder
 
-        self.queue.submit(std::iter::once(encoder.finish()));
+        // Render the text
+        for text in &self.texts {
+            self.text_renderer.draw_text(
+                &text,
+                self.config.width as f32,
+                self.config.height as f32,
+            );
+        }
+        self.text_renderer.render(
+            &self.device,
+            &mut encoder,
+            &view,
+            &mut self.staging_belt,
+            self.config.width,
+            self.config.height,
+        );
+
+        self.staging_belt.finish();
+
+        self.queue.submit(iter::once(encoder.finish()));
         output.present();
+
+        // Clear texts after rendering
+        self.texts.clear();
+        self.staging_belt.finish();
+        self.staging_belt.recall();
 
         Ok(())
     }
