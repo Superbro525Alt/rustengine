@@ -5,6 +5,7 @@ use crate::engine::graphics_backend::{
 };
 // use crate::engine::state::CustomEvent;
 use rand::Rng;
+use std::ops::Index;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -24,7 +25,7 @@ pub struct Renderer {
     pub height: u32,
     pub render_queue: Arc<Mutex<Vec<component::RenderOutput>>>,
     pub window: Arc<Mutex<Window>>,
-    backend: State,
+    pub backend: State,
     pub dt: Option<Duration>,
 }
 
@@ -100,19 +101,21 @@ impl Renderer {
                     }
                     AppEvent::RedrawRequested => {
                         renderer.lock().unwrap().dt = Some(t.elapsed().unwrap());
-                        println!("Frame Time: {:?}", t.elapsed().unwrap());
+                        // println!("Frame Time: {:?}", t.elapsed().unwrap());
                         t = std::time::SystemTime::now();
                         times.push(t);
                         let queue = renderer.lock().unwrap().render_queue.clone();
+
                         renderer.lock().unwrap().backend.update(
                             queue
                                 .lock()
                                 .unwrap()
                                 .iter_mut()
-                                .map(|out| out.obj.desc_raw())
+                                .map(|out| {out.raw_desc()})
                                 .collect(),
-                            [1.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0],
                         );
+
                         let render_result = renderer.lock().unwrap().backend.render();
                         match render_result {
                             Ok(_) => {}

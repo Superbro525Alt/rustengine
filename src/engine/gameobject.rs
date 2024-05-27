@@ -3,9 +3,9 @@ use crate::engine::collider::Collider;
 use crate::engine::component;
 use crate::engine::component::{ComponentTrait, TickBehavior, Transform};
 use crate::engine::state::Engine;
-use colored::Colorize;
 use downcast_rs::Downcast;
 use lazy_static::lazy_static;
+use rocket::form::validate::Contains;
 use std::any::Any;
 use std::any::TypeId;
 use std::collections::HashMap;
@@ -13,12 +13,15 @@ use std::process::exit;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use super::collider::Point;
+
 pub type MutexdGameObject = Arc<Mutex<GameObject>>;
 
 lazy_static! {
     pub static ref GAME_OBJECT_REGISTRY: Mutex<HashMap<i32, Arc<Mutex<GameObject>>>> =
         Mutex::new(HashMap::new());
     static ref GAME_OBJECT_COUNT: Mutex<Count> = Mutex::new(Count::new());
+    pub static ref GAME_OBJECT_DESTROYED: Mutex<Vec<i32>> = Mutex::new(Vec::new());
 }
 
 #[derive(Clone)]
@@ -67,6 +70,10 @@ impl GameObjectState {
             .collect()
     }
 
+    pub fn child_ids(&self) -> Vec<i32> {
+        self.child_ids.clone()
+    }
+
     pub fn active(&self) -> bool {
         self.active
     }
@@ -87,9 +94,9 @@ pub struct GameObject {
     pub name: String,
     pub id: i32,
     pub components: Vec<Arc<Mutex<component::ComponentWrapper>>>,
-    pub colliders: Vec<Arc<Mutex<dyn Collider>>>,
+    pub colliders: Vec<Arc<Mutex<Box<dyn Collider>>>>,
     pub state: GameObjectState,
-    render_reference: Option<usize>,
+    pub render_references: Vec<usize>,
 }
 
 impl GameObject {
@@ -105,11 +112,11 @@ impl GameObject {
             id,
             components,
             state,
-            render_reference: None,
+            render_references: Vec::new(),
             colliders: Vec::new(),
         }));
         GAME_OBJECT_REGISTRY
-            .lock()
+            .try_lock()
             .unwrap()
             .insert(id, game_object.clone());
         GAME_OBJECT_COUNT.lock().unwrap().increment();
@@ -117,6 +124,10 @@ impl GameObject {
     }
 
     pub fn find_by_id(id: i32) -> Option<Arc<Mutex<Self>>> {
+        if GAME_OBJECT_DESTROYED.lock().unwrap().contains(id) {
+            return None;
+        }
+
         let obj = GAME_OBJECT_REGISTRY.lock().unwrap().get(&id).cloned();
 
         if obj.is_some() {
@@ -124,7 +135,8 @@ impl GameObject {
         } else {
             let text = format!("No object with id {}", id);
             eprintln!("ERROR: {}", text);
-            exit(1);
+            None
+            // exit(1);
         }
     }
 
@@ -148,22 +160,22 @@ impl GameObject {
         self.components.push(component);
     }
 
-    pub fn colliders(&self) -> &[Arc<Mutex<dyn Collider>>] {
+    pub fn colliders(&self) -> &[Arc<Mutex<Box<dyn Collider>>>] {
         &self.colliders
     }
 
-    pub fn add_collider(&mut self, coll: Arc<Mutex<dyn Collider>>) {
+    pub fn add_collider(&mut self, coll: Arc<Mutex<Box<dyn Collider>>>) {
         self.colliders.push(coll);
     }
 
     pub fn colliding_with(
         &mut self,
-        other: Arc<Mutex<dyn Collider>>,
+        other: Arc<Mutex<Box<dyn Collider>>>,
         other_pos: collider::Point,
     ) -> bool {
         let mut current_pos: [f32; 3] = [0.0, 0.0, 0.0];
         self.get_component_closure::<Transform>(|transform| {
-            let current_pos = transform.inner.clone();
+            let current_pos = transform.pos.clone();
         });
 
         for coll in self.colliders.iter_mut() {
@@ -186,7 +198,7 @@ impl GameObject {
     pub fn colliding_point(&mut self, other: collider::Point) -> bool {
         let mut current_pos: [f32; 3] = [0.0, 0.0, 0.0];
         self.get_component_closure::<Transform>(|transform| {
-            let current_pos = transform.inner.clone();
+            let current_pos = transform.pos.clone();
         });
 
         for coll in self.colliders.iter_mut() {
@@ -197,6 +209,28 @@ impl GameObject {
                     z: current_pos[2],
                 },
                 &other,
+            ) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn intersects(&mut self, segment: &mut (Point, Point)) -> bool {
+        let mut current_pos: [f32; 3] = [0.0, 0.0, 0.0];
+        self.get_component_closure::<Transform>(|transform| {
+            current_pos = transform.pos.clone();
+        });
+
+        for coll in self.colliders.iter_mut() {
+            if coll.try_lock().unwrap().intersects(
+                segment,
+                &Point {
+                    x: current_pos[0],
+                    y: current_pos[1],
+                    z: current_pos[2]
+                }
             ) {
                 return true;
             }
@@ -242,17 +276,14 @@ impl GameObject {
         None
     }
 
-    pub fn get_component<T: ComponentTrait + 'static>(
-        &self,
-    ) -> Option<Arc<Mutex<dyn component::ComponentTrait>>> {
-        self.components.iter().find_map(|wrapper| {
-            let wrapper = wrapper.lock().unwrap();
-            if wrapper.component.as_any().downcast_ref::<T>().is_some() {
-                Some(wrapper.component.clone())
-            } else {
-                None
+    pub fn has_component<T: ComponentTrait + 'static>(&self) -> bool {
+        for comp_arc in self.components.clone() {
+            let comp_lock = comp_arc.lock().unwrap();
+            if (&*comp_lock.component.lock().unwrap()).as_any().downcast_ref::<T>().is_some() {
+                return true;
             }
-        })
+        }
+        false
     }
 
     pub fn tick_self(&mut self, engine: &mut Engine) {
@@ -264,24 +295,24 @@ impl GameObject {
                 Some(&engine.input_data()),
                 self,
                 engine.dt.unwrap_or(Duration::from_secs(0)),
+                engine.renderer.lock().unwrap().backend.camera.clone()
             );
 
             drop(comp);
 
             if render_data.is_some() {
                 if self.state.active {
-                    if self.render_reference.is_some() {
-                        engine.remove_from_render_queue(
-                            self.render_reference.expect("no render reference"),
-                        );
-                    }
+                    // if self.render_reference.is_some() {
+                    //     engine.remove_from_render_queue(
+                    //         self.render_reference.expect("no render reference"),
+                    //     );
+                    // }
 
-                    self.render_reference =
-                        Some(engine.render(render_data.take().expect("get good")));
+                    self.render_references.push(engine.render(render_data.take().expect("get good")));
                 } else {
-                    engine.remove_from_render_queue(
-                        self.render_reference.expect("no render reference"),
-                    );
+                    // engine.remove_from_render_queue(
+                    //     self.render_reference.expect("no render reference"),
+                    // );
                 }
             }
 
@@ -302,6 +333,10 @@ impl GameObject {
         self.tick_self(engine);
         self.tick_children(engine);
     }
+
+    pub fn destroy(&mut self) {
+        GAME_OBJECT_DESTROYED.lock().unwrap().push(self.id); 
+    } 
 }
 
 pub fn make_base_game_object(name: String) -> Arc<Mutex<GameObject>> {
@@ -315,7 +350,7 @@ pub fn make_base_game_object(name: String) -> Arc<Mutex<GameObject>> {
 
 pub fn colliding_with(
     obj_id: i32,
-    other: Arc<Mutex<dyn Collider>>,
+    other: Arc<Mutex<Box<dyn Collider>>>,
     other_pos: collider::Point,
 ) -> bool {
     let mut obj_op = GameObject::find_by_id(obj_id);
@@ -335,7 +370,7 @@ pub fn colliding_point(obj_id: i32, other: collider::Point) -> bool {
     lock.colliding_point(other)
 }
 
-pub fn add_collider(obj_id: i32, coll: Arc<Mutex<dyn Collider>>) {
+pub fn add_collider(obj_id: i32, coll: Arc<Mutex<Box<dyn Collider>>>) {
     let mut obj_op = GameObject::find_by_id(obj_id);
     let obj = obj_op.expect("no object");
 
@@ -426,33 +461,122 @@ pub fn add_component(object: i32, comp: Arc<Mutex<component::ComponentWrapper>>)
 }
 
 pub fn has_component<T: component::ComponentTrait + 'static>(obj_id: i32) -> bool {
-    let game_objects = GAME_OBJECT_REGISTRY.lock().expect("Registry lock failed");
-    let game_object = match game_objects.get(&obj_id) {
-        Some(obj_arc) => obj_arc.lock().expect("GameObject lock failed"),
-        None => {
-            eprintln!("ERROR: No object with id {}", obj_id);
-            return false; // Optionally handle this more gracefully
-        }
-    };
-
-    let comp_type_id = TypeId::of::<T>();
-
-    game_object.components.iter().any(|comp_arc| {
-        let comp = comp_arc.lock().unwrap();
-        TypeId::of::<dyn ComponentTrait>() == comp_type_id
-    })
+    let game_object = GameObject::find_by_id(obj_id).expect("No object found");
+    let lock = game_object.lock().unwrap();
+    lock.has_component::<T>()
 }
 
-pub fn get_component<T: component::ComponentTrait + 'static>(obj_id: i32) {
-    if has_component::<T>(obj_id) {
-        to_object(obj_id, |obj| {
-            obj.get_component::<T>();
-        })
-    } else {
-        eprintln!(
-            "ERROR: The object with id {} does not contain the requested component",
-            obj_id
-        );
-        exit(1);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::collider::Point;
+    use crate::engine::component::{ComponentWrapper, Transform};
+    use crate::engine::components::{RenderComponent, InputComponent};
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn test_game_object_creation() {
+        let name = "TestObject".to_string();
+        let components = vec![];
+        let state = GameObjectState::new(true, None, vec![]);
+        let game_object = GameObject::new(name.clone(), components, state);
+
+        let game_object = game_object.lock().unwrap();
+        assert_eq!(game_object.name(), name);
+        assert_eq!(game_object.state.active(), true);
+    }
+
+    #[test]
+    fn test_add_component() {
+        let name = "TestObject".to_string();
+        let game_object = make_base_game_object(name);
+
+        // let id = game_object.lock().unwrap().id();
+        let transform_component = InputComponent::new(String::from("name"));
+
+        // add_component(id, transform_component.clone());
+        game_object.lock().unwrap().add_component(transform_component.clone());
+        assert!(game_object.lock().unwrap().has_component::<InputComponent>());
+
+        let mut has = false;
+
+        game_object.lock().unwrap().get_component_closure::<InputComponent>(|input| {
+            has = true;
+        });
+        assert!(has);
+    }
+
+    // #[test]
+    // fn test_add_collider() {
+    //     let name = "TestObject".to_string();
+    //     let game_object = make_base_game_object(name);
+    //
+    //     let id = game_object.lock().unwrap().id();
+    //     let collider = Arc::new(Mutex::new(collider::PointCollider::new(Point { x: 0.0, y: 0.0, z: 0.0 })));
+    //
+    //     add_collider(id, collider.clone());
+    //     assert!(game_object.lock().unwrap().colliders().contains(&collider));
+    // }
+
+    #[test]
+    fn test_reparent() {
+        let parent_name = "ParentObject".to_string();
+        let child_name = "ChildObject".to_string();
+
+        let parent_object = make_base_game_object(parent_name);
+        let child_object = make_base_game_object(child_name);
+
+        let parent_id = parent_object.lock().unwrap().id();
+        let child_id = child_object.lock().unwrap().id();
+
+        reparent(parent_id, child_id);
+
+        let child_object = child_object.lock().unwrap();
+        assert_eq!(child_object.state.parent_id, Some(parent_id));
+
+        let parent_object = parent_object.lock().unwrap();
+        assert!(parent_object.state.child_ids.contains(&child_id));
+    }
+
+    #[test]
+    fn test_colliding_with() {
+        let name1 = "Object1".to_string();
+        let name2 = "Object2".to_string();
+
+        let object1 = make_base_game_object(name1);
+        let object2 = make_base_game_object(name2);
+
+        let id1 = object1.lock().unwrap().id();
+        let id2 = object2.lock().unwrap().id();
+
+        let collider1 = Arc::new(Mutex::new(collider::PointCollider::new(Point { x: 0.0, y: 0.0, z: 0.0 })));
+        let collider2 = Arc::new(Mutex::new(collider::PointCollider::new(Point { x: 0.0, y: 0.0, z: 0.0 })));
+
+        add_collider(id1, collider1.clone());
+        add_collider(id2, collider2.clone());
+
+        assert!(colliding_with(id1, collider2, Point { x: 0.0, y: 0.0, z: 0.0 }));
+    }
+
+    #[test]
+    fn test_colliding_point() {
+        let name = "Object".to_string();
+        let object = make_base_game_object(name);
+
+        let id = object.lock().unwrap().id();
+        let collider = Arc::new(Mutex::new(collider::PointCollider::new(Point { x: 0.0, y: 0.0, z: 0.0 })));
+
+        add_collider(id, collider.clone());
+        assert!(colliding_point(id, Point { x: 0.0, y: 0.0, z: 0.0 }));
+    }
+
+    #[test]
+    fn test_update_name() {
+        let name = "TestObject".to_string();
+        let new_name = "UpdatedObject".to_string();
+        let game_object = make_base_game_object(name);
+
+        game_object.lock().unwrap().update_name(new_name.clone());
+        assert_eq!(game_object.lock().unwrap().name(), &new_name);
     }
 }

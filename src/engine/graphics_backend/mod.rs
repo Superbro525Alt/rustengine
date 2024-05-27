@@ -272,13 +272,13 @@ impl Backend for State {
             .collect();
 
         // Example usage of text renderer
-        let example_text = Text {
-            content: String::from("Hello World"),
-            position: cgmath::Point2::new(0.0, 0.0),
-            color: [0.0, 0.0, 1.0, 1.0],
-            origin: TextOrigin::Center,
-        };
-        self.ui_handler.queue(UIElement::Text(example_text)); // Add the text to the texts vector
+        // let example_text = Text {
+        //     content: String::from("Hello World"),
+        //     position: cgmath::Point2::new(0.0, 0.0),
+        //     color: [0.0, 0.0, 1.0, 1.0],
+        //     origin: TextOrigin::Center,
+        // };
+        // self.ui_handler.queue(UIElement::Text(example_text)); // Add the text to the texts vector
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -345,8 +345,6 @@ impl Backend for State {
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
 
-        // Clear texts after rendering
-        self.ui_handler.clear();
         self.staging_belt.finish();
         self.staging_belt.recall();
 

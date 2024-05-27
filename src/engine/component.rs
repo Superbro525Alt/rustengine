@@ -8,6 +8,10 @@ use std::any::{self, Any, TypeId};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use super::bounds;
+use super::bounds::Bounds2D;
+use super::camera;
+
 #[derive(Clone)]
 pub struct ComponentState {
     _state: Value,
@@ -53,12 +57,16 @@ pub struct InputData {
 
 // #[derive(Clone)]
 pub struct RenderOutput {
-    pub obj: Box<dyn Object>,
+    pub obj: Option<Box<dyn Object>>,
 }
 
 impl RenderOutput {
     pub fn raw_desc(&mut self) -> (Vec<Vertex>, Vec<u16>) {
-        self.obj.desc_raw()
+        if self.obj.is_some() {
+            return self.obj.as_mut().expect("none").desc_raw();
+        }
+
+        (vec![], vec![])
     }
 }
 
@@ -71,7 +79,7 @@ pub trait InputTickBehavior: Send + Sync {
 }
 
 pub trait RenderTickBehavior: Send + Sync {
-    fn render_tick(&mut self, obj: &mut GameObject, dt: Duration) -> RenderOutput;
+    fn render_tick(&mut self, obj: &mut GameObject, dt: Duration, cam: camera::Camera) -> RenderOutput;
 }
 
 // impl_downcast!(InputTickBehavior);
@@ -112,6 +120,7 @@ impl TickVariant {
         input: Option<&InputData>,
         obj: &mut GameObject,
         dt: Duration,
+        cam: camera::Camera
     ) -> Option<RenderOutput> {
         match self {
             TickVariant::Input(behavior) => {
@@ -120,7 +129,7 @@ impl TickVariant {
                 }
                 None
             }
-            TickVariant::Render(behavior) => Some(behavior.lock().unwrap().render_tick(obj, dt)),
+            TickVariant::Render(behavior) => Some(behavior.lock().unwrap().render_tick(obj, dt, cam)),
             TickVariant::Default(behavior) => {
                 behavior.lock().unwrap().tick(obj, dt);
                 None
@@ -145,9 +154,10 @@ impl ComponentWrapper {
         input: Option<&InputData>,
         obj: &mut GameObject,
         dt: Duration,
+        cam: camera::Camera
     ) -> Option<RenderOutput> {
         let mut ticker = self.ticker.lock().unwrap();
-        ticker.tick(input, obj, dt)
+        ticker.tick(input, obj, dt, cam)
     }
 }
 
@@ -210,7 +220,8 @@ where
 
 pub struct Transform {
     pub state: ComponentState,
-    pub inner: [f32; 3],
+    pub pos: [f32; 3],
+    pub rot: [f32; 3],
 }
 
 impl ComponentTrait for Transform {
@@ -231,7 +242,8 @@ impl Transform {
     pub fn new() -> Arc<Mutex<ComponentWrapper>> {
         let transform = Arc::new(Mutex::new(Self {
             state: ComponentState::new(),
-            inner: [0.0, 0.0, 0.0],
+            pos: [0.0, 0.0, 0.0],
+            rot: [0.0, 0.0, 0.0],
         }));
         let tick_variant = Arc::new(Mutex::new(TickVariant::Default(transform.clone())));
 
@@ -245,12 +257,17 @@ impl Transform {
 pub struct CharacterController2D {
     pub moveamt: f32,
     pub state: ComponentState,
+    pub rotamt: f32,
+    pub bounds: Option<bounds::Bounds2D>
 }
 
 impl InputTickBehavior for CharacterController2D {
     fn tick_with_input(&mut self, input: &InputData, obj: &mut GameObject, dt: Duration) {
+        let mut bound = self.bounds.clone();
+
         obj.get_component_closure::<Transform>(|transform| {
-            let mut new = transform.inner;
+            let mut new = transform.pos;
+            let mut new_rot = transform.rot;
             // let dt_conv = (dt.as_millis() as f32) / 100.0;
             let dt_conv = 1.0;
             for key in input.keys_pressed.iter() {
@@ -259,10 +276,31 @@ impl InputTickBehavior for CharacterController2D {
                     winit::event::VirtualKeyCode::S => new[1] -= self.moveamt / dt_conv,
                     winit::event::VirtualKeyCode::A => new[0] -= self.moveamt / dt_conv,
                     winit::event::VirtualKeyCode::D => new[0] += self.moveamt / dt_conv,
+
+                    winit::event::VirtualKeyCode::Left => new_rot[2] += self.rotamt / dt_conv,
+                    winit::event::VirtualKeyCode::Right => new_rot[2] -= self.rotamt / dt_conv,
                     _ => {}
                 }
             }
-            transform.inner = new;
+
+            if (bound.is_some()) {
+                let clipped = bound.as_mut().expect("no bounds").clip(new[0], new[1]);
+                new[0] = clipped[0];
+                new[1] = clipped[1];
+            }
+
+            // println!("deg: {}", new_rot[2]);
+
+            // let mut angle = new_rot[2];
+            // angle = angle % 360.0; // Wrap angle within 0-360
+            // if angle < 0.0 {
+            //     angle += 360.0; // Ensure angle is positive
+            // }
+            //
+            // new_rot[2] = angle;
+
+            transform.pos = new;
+            transform.rot = new_rot;
         });
     }
 }
@@ -278,10 +316,12 @@ impl ComponentTrait for CharacterController2D {
 }
 
 impl CharacterController2D {
-    pub fn new() -> Arc<Mutex<ComponentWrapper>> {
+    pub fn new(bounds: Option<Bounds2D>) -> Arc<Mutex<ComponentWrapper>> {
         let controller = Arc::new(Mutex::new(Self {
             moveamt: 0.01,
+            rotamt: 2.0 /*0.01*/,
             state: ComponentState::new(),
+            bounds
         }));
         let tick_variant = Arc::new(Mutex::new(TickVariant::Input(controller.clone())));
 

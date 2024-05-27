@@ -27,12 +27,33 @@ pub trait Object: Send + Sync {
 
         self.desc()
     }
-    fn rotate_vertexes(&mut self, angle_deg: f32, axis: char) -> BufferDesc {
+
+    fn rotate_vertexes(&mut self, angle_deg: f32, axis: char, camera_pos: [f32; 3]) -> BufferDesc {
         let angle_rad = angle_deg * PI / 180.0;
         let sin_angle = angle_rad.sin();
         let cos_angle = angle_rad.cos();
         let mut vertexes = self.get_vertexes();
 
+        // Calculate the center of the object
+        let mut center = [0.0, 0.0, 0.0];
+        let vertex_count = vertexes.len() as f32;
+        for vertex in &vertexes {
+            center[0] += vertex.position[0];
+            center[1] += vertex.position[1];
+            center[2] += vertex.position[2];
+        }
+        center[0] /= vertex_count;
+        center[1] /= vertex_count;
+        center[2] /= vertex_count;
+
+        // Translate vertices to origin
+        for vertex in vertexes.iter_mut() {
+            vertex.position[0] -= center[0];
+            vertex.position[1] -= center[1];
+            vertex.position[2] -= center[2];
+        }
+
+        // Rotate vertices around the origin
         for vertex in vertexes.iter_mut() {
             let (x, y, z) = (vertex.position[0], vertex.position[1], vertex.position[2]);
             vertex.position = match axis {
@@ -54,8 +75,22 @@ pub trait Object: Send + Sync {
                 _ => [x, y, z],
             };
         }
-        self.set_vertexes(vertexes.to_vec());
+
+        // Translate vertices back to their original position
+        for vertex in vertexes.iter_mut() {
+            vertex.position[0] += center[0];
+            vertex.position[1] += center[1];
+            vertex.position[2] += center[2];
+        }
+
+        self.set_vertexes(vertexes);
         self.desc()
+    }
+
+    fn rotate_vertexes_arr(&mut self, arr: [f32; 3], camera_pos: [f32; 3]) {
+        self.rotate_vertexes(arr[0], 'x', camera_pos);
+        self.rotate_vertexes(arr[1], 'y', camera_pos);
+        self.rotate_vertexes(arr[2], 'z', camera_pos);
     }
 
     fn scale_vertexes(&mut self, scale: f32) -> BufferDesc {
@@ -65,9 +100,10 @@ pub trait Object: Send + Sync {
             v.position[1] *= scale;
             v.position[2] *= scale;
         }
-        self.set_vertexes(vertexes.to_vec());
+        self.set_vertexes(vertexes);
         self.desc()
     }
+
     fn get_vertexes(&mut self) -> Vec<Vertex>;
     fn set_vertexes(&mut self, vertexes: Vec<Vertex>);
     fn desc_raw(&mut self) -> (Vec<Vertex>, Vec<u16>) {

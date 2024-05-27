@@ -3,6 +3,7 @@ use cgmath;
 use cgmath::Angle;
 use cgmath::InnerSpace;
 use cgmath::SquareMatrix;
+use lazy_static::lazy_static;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -24,6 +25,7 @@ impl CameraUniform {
     }
 }
 
+#[derive(Clone)]
 pub struct Camera {
     pub position: cgmath::Point3<f32>,
     pub yaw: f32,
@@ -38,7 +40,7 @@ pub struct Camera {
 
 impl Camera {
     pub fn new(position: cgmath::Point3<f32>, aspect_ratio: f32) -> Self {
-        Camera {
+        let cam = Camera {
             position,
             yaw: -90.0, // Default facing along -Z
             pitch: 0.0,
@@ -48,7 +50,9 @@ impl Camera {
             near: 0.1,
             far: 100.0,
             rotation_angle: 1.0,
-        }
+        };
+
+        cam
     }
 
     pub fn view_matrix(&self) -> cgmath::Matrix4<f32> {
@@ -83,4 +87,5 @@ impl Camera {
         // Update forward vector based on new yaw and pitch
         // self.update_camera_vectors();
     }
+
 }

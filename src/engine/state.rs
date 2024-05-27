@@ -3,6 +3,8 @@ use crate::engine::component;
 use crate::engine::gameobject;
 use crate::engine::renderer;
 use crate::engine::static_component;
+use std::ops::Index;
+use std::process::exit;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -10,6 +12,7 @@ use std::thread::JoinHandle;
 use std::time::SystemTime;
 use std::time::{Duration, Instant};
 
+use serde_json::to_string;
 use winit::window;
 use winit::{
     event::*,
@@ -17,7 +20,13 @@ use winit::{
     window::{Window, WindowBuilder, WindowId},
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::engine::physics::PhysicsEngine;
+
+use super::save::EngineSaveData;
+use super::static_component::StaticComponent;
+use super::ui::UIElement;
 
 #[derive(Debug, Clone)]
 pub enum AppEvent {
@@ -88,8 +97,8 @@ impl EngineState {
         }
     }
 
-    pub fn objects(&self) -> &Vec<i32> {
-        &self.objects
+    pub fn objects(&self) -> Vec<i32> {
+        self.objects.clone()
     }
 
     pub fn add_object(&mut self, obj: i32) {
@@ -120,6 +129,7 @@ pub struct Engine {
     mouse_buttons_pressed: Vec<winit::event::MouseButton>,
     mouse_position: (f64, f64),
     pub physics_engine: PhysicsEngine,
+    pub paused: bool
 }
 
 unsafe impl Send for Engine {}
@@ -152,6 +162,7 @@ impl Engine {
             mouse_buttons_pressed: Vec::new(),
             mouse_position: (0.0, 0.0),
             physics_engine: PhysicsEngine::new(0.1),
+            paused: false
         };
 
         if graphics {
@@ -162,6 +173,14 @@ impl Engine {
         }
 
         (engine, event_loop)
+    }
+
+    pub fn pause(&mut self) {
+        self.paused = true;
+    }
+
+    pub fn unpause(&mut self) {
+        self.paused = false;
     }
 
     pub fn state(&self) -> &EngineState {
@@ -176,15 +195,19 @@ impl Engine {
         let mut renderer = self.renderer.lock().unwrap();
         let mut render_queue = renderer.render_queue.lock().unwrap();
         render_queue.push(data);
-        if render_queue.len() == 2 {
-            return 0;
-        }
+        // if render_queue.len() == 2 {
+        //     return 0;
+        // }
+        //
+        // println!("pushed");
         render_queue.len() - 1
     }
 
     pub fn remove_from_render_queue(&mut self, reference: usize) {
         let mut renderer = self.renderer.lock().unwrap();
         let mut render_queue = renderer.render_queue.lock().unwrap();
+
+        // println!("removed: {}", reference);
         render_queue.remove(reference);
     }
 
@@ -196,17 +219,48 @@ impl Engine {
         }
     }
 
+    pub fn quit(&mut self) {
+        exit(0);
+    }
+
+    pub fn export(&mut self) -> EngineSaveData {
+        EngineSaveData::from_engine(self)
+    }
+
     pub fn tick(&mut self) {
-        for obj in self.state.objects.clone().iter() {
-            gameobject::to_object(*obj, |game_object| {
-                if game_object.state.parent_id.is_none() {
-                    game_object.tick_all(self);
-                }
-            });
+        if (self.paused) { return; }
+
+        self.renderer.lock().unwrap().backend.ui_handler.clear();
+
+        for comp in self.state.static_components.clone().iter() {
+            comp.lock().unwrap().tick(self);
         }
 
-        for comp in self.state.static_components.iter_mut() {
-            comp.lock().unwrap().tick();
+        let mut i = 0;
+        let mut obj_clone = self.state.objects.clone();
+        obj_clone.reverse();
+
+        for obj in obj_clone.iter() {
+            if !gameobject::GAME_OBJECT_DESTROYED.lock().unwrap().contains(obj) {
+                gameobject::to_object(*obj, |game_object| {
+                    // println!("obj: {}: references: {}. engine references: {}", i, game_object.render_references.len(), self.renderer.lock().unwrap().render_queue.lock().unwrap().len());
+                    game_object.render_references.reverse();
+                    for ref_id in game_object.render_references.drain(..) {
+                        self.remove_from_render_queue(ref_id);
+                    }
+                });
+                i += 1;
+            }
+        }
+
+        for obj in self.state.objects.clone().iter() {
+            if !gameobject::GAME_OBJECT_DESTROYED.lock().unwrap().contains(obj) {
+                gameobject::to_object(*obj, |game_object| {
+                    if game_object.state.parent_id.is_none() {
+                        game_object.tick_all(self);
+                    }
+                });
+            }
         }
     }
 
@@ -221,6 +275,47 @@ impl Engine {
         self.state.add_static(comp);
     }
 
+    pub fn add_ui_element(&mut self, element: UIElement) {
+        self.renderer.lock().unwrap().backend.ui_handler.queue(element);
+    }
+
+    pub fn get_static_closure<T>(&mut self, mut f: impl FnMut(&mut T)) -> Option<()>
+    where
+        T: StaticComponent + 'static,
+    {
+                // Iterate over components
+        let comps = self.state.static_components.clone();
+        for comp_arc in comps {
+            let mut _comp_lock = comp_arc.try_lock()/*.ok()?*/;
+
+            let mut comp_lock = match _comp_lock {
+                Ok(lock) => lock,
+                Err(_) => {
+                    println!("couldn't get lock");
+                    continue;
+                }
+            };
+
+            // println!("could get lock");
+
+            // Attempt to downcast the component under the MutexGuard's scope
+            // println!("{}", comp_lock.component);
+            if let Some(component) = (&mut *comp_lock)
+                .as_any_mut()
+                .downcast_mut::<T>()
+            {
+                f(component); // Execute the closure with the mutable reference
+                              // drop(comp_lock);
+                return Some(()); // Return early on success
+            }
+
+            drop(comp_lock);
+        }
+
+        // If no component of type T was found and processed
+        None
+    }
+
     pub fn run(engine: Arc<Mutex<Self>>, event_loop: EventLoop<()>) {
         // println!("running");
         let self_clone = engine.clone();
@@ -229,6 +324,7 @@ impl Engine {
                 thread::sleep(Duration::from_millis(16)); // Adjust timing as needed, e.g., ~60 Hz
                 let mut engine = self_clone.lock().unwrap();
                 engine.tick(); // Perform periodic update
+                drop(engine);
             }
         });
 
@@ -236,14 +332,14 @@ impl Engine {
         thread::spawn(move || {
             let mut last = SystemTime::now();
             loop {
-                let mut engine = self_clone_.lock().unwrap();
-                let mut dt = last.elapsed();
-                if dt.is_ok() {
-                    engine.physics_engine.tick(dt.unwrap().as_secs_f32());
-                }
-                last = SystemTime::now();
-
-                drop(engine);
+                // let mut engine = self_clone_.try_lock().unwrap();
+                // let mut dt = last.elapsed();
+                // if dt.is_ok() {
+                //     engine.physics_engine.tick(dt.unwrap().as_secs_f32());
+                // }
+                // last = SystemTime::now();
+                //
+                // drop(engine);
             }
         });
 
