@@ -3,7 +3,7 @@ use crate::engine::static_component::Container;
 use crate::engine::component::ComponentState;
 use winit::event_loop::{EventLoopBuilder, EventLoop};
 use std::sync::{Arc, Mutex, RwLock};
-use serde::{Serialize, Deserialize};
+use serde::{Serialize, Deserialize, Serializer, Deserializer};
 use serde_json::Value;
 use crate::engine::component::{ComponentWrapper, ComponentTrait, TickBehavior, Transform};
 use crate::engine::collider::{Collider, CubeCollider, RectangularPrismCollider, PointCollider, OctagonCollider, Point};
@@ -18,6 +18,69 @@ use super::state::Engine;
 pub use super::static_component::StaticComponent;
 use std::any::Any;
 use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::fmt::Debug;
+
+// Define a Link wrapper for Arc<Mutex<T>>
+#[derive(Debug)]
+pub struct Link<T> {
+    pub id: usize,
+    pub data: Arc<Mutex<T>>,
+}
+
+impl<T> Clone for Link<T> {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            data: Arc::clone(&self.data),
+        }
+    }
+}
+
+impl<T> Link<T> {
+    pub fn new(data: impl Into<Arc<Mutex<T>>>) -> Self {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::SeqCst);
+        Self {
+            id,
+            data: data.into(),
+        }
+    }
+}
+
+// Serialization and deserialization for Link
+impl<T: Serialize + Clone + Debug> Serialize for Link<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u64(self.id as u64)
+    }
+}
+
+impl<'de, T: Deserialize<'de> + Clone + Debug + Default> Deserialize<'de> for Link<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let id = usize::deserialize(deserializer)?;
+        Ok(Self {
+            id,
+            data: Arc::new(Mutex::new(T::default())),
+        })
+    }
+}
+
+impl<T: Default> Default for Link<T> {
+    fn default() -> Self {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::SeqCst);
+        Self {
+            id,
+            data: Arc::new(Mutex::new(T::default())),
+        }
+    }
+}
 
 // Define a trait for serialization and deserialization
 pub(crate) trait ComponentSaveLoad: Send + Sync + Downcast + std::any::Any {
@@ -25,36 +88,48 @@ pub(crate) trait ComponentSaveLoad: Send + Sync + Downcast + std::any::Any {
     fn from_save_data(data: Value) -> Arc<Mutex<ComponentWrapper>>
     where
         Self: Sized;
-    // fn init()
-    // where 
-    //     Self: Sized;
 }
 
 pub(crate) trait StaticComponentSaveLoad: Send + Sync + Downcast + std::any::Any {
     fn to_save_data(&self) -> Value;
-    fn from_save_data(data: Value) -> Container where Self: Sized;
+    fn from_save_data(data: Value) -> Container
+    where
+        Self: Sized;
 }
 
-// impl_downcast!(ComponentSaveLoad);
+impl_downcast!(ComponentSaveLoad);
+impl_downcast!(StaticComponentSaveLoad);
 
-
-lazy_static::lazy_static! {
+lazy_static! {
     static ref COMPONENT_REGISTRY: std::sync::RwLock<std::collections::HashMap<String, Box<dyn Fn(serde_json::Value) -> std::sync::Arc<std::sync::Mutex<ComponentWrapper>> + Send + Sync>>> = std::sync::RwLock::new(std::collections::HashMap::new());
     static ref STATIC_COMPONENT_REGISTRY: RwLock<HashMap<String, Box<dyn Fn(Value) -> Arc<Mutex<dyn StaticComponent>> + Send + Sync>>> = RwLock::new(HashMap::new());
+    static ref LINK_REGISTRY: RwLock<HashMap<usize, Box<dyn std::any::Any + Send + Sync>>> = RwLock::new(HashMap::new());
+}
+
+pub fn register_link<T: 'static + Send + Sync>(link: Link<T>) {
+    let mut registry = LINK_REGISTRY.write().unwrap();
+    registry.insert(link.id, Box::new(link.data) as Box<dyn std::any::Any + Send + Sync>);
+}
+
+pub fn get_link<T: 'static + Send + Sync>(id: usize) -> Option<Arc<Mutex<T>>> {
+    let registry = LINK_REGISTRY.read().unwrap();
+    registry.get(&id).and_then(|data| data.downcast_ref::<Arc<Mutex<T>>>().cloned())
 }
 
 #[macro_export]
 macro_rules! impl_save_load_default {
-    ($comp_type:ty, $save_struct:ident, $( $field:ident : $field_type:ty ),* ) => {
-        #[derive(Serialize, Deserialize, Debug)]
+    ($comp_type:ty, $save_struct:ident, { $( $field:ident : $field_type:ty ),* }, { $( $link_field:ident : $link_field_type:ty ),* }) => {
+        #[derive(Serialize, Deserialize, Debug, Default)]
         pub(crate) struct $save_struct {
-            $( $field: $field_type ),*
+            $( $field: $field_type ),*,
+            $( $link_field: $crate::engine::save::Link<$link_field_type> ),*
         }
 
         impl $crate::engine::save::ComponentSaveLoad for $comp_type {
             fn to_save_data(&self) -> serde_json::Value {
                 let save_data = $save_struct {
-                    $( $field: self.$field.clone() ),*
+                    $( $field: self.$field.clone() ),*,
+                    $( $link_field: self.$link_field.clone() ),*
                 };
                 serde_json::to_value(save_data).unwrap()
             }
@@ -62,7 +137,8 @@ macro_rules! impl_save_load_default {
             fn from_save_data(data: serde_json::Value) -> std::sync::Arc<std::sync::Mutex<ComponentWrapper>> {
                 let save_data: $save_struct = serde_json::from_value(data).unwrap();
                 let component = std::sync::Arc::new(std::sync::Mutex::new(Self {
-                    $( $field: save_data.$field ),*
+                    $( $field: save_data.$field ),*,
+                    $( $link_field: save_data.$link_field ),*
                 }));
 
                 let ticker = std::sync::Arc::new(std::sync::Mutex::new(TickVariant::Default(component.clone() as std::sync::Arc<std::sync::Mutex<dyn TickBehavior>>)));
@@ -76,16 +152,18 @@ macro_rules! impl_save_load_default {
 
 #[macro_export]
 macro_rules! impl_save_load_input {
-    ($comp_type:ty, $save_struct:ident, $( $field:ident : $field_type:ty ),* ) => {
-        #[derive(Serialize, Deserialize, Debug)]
+    ($comp_type:ty, $save_struct:ident, { $( $field:ident : $field_type:ty ),* }, { $( $link_field:ident : $link_field_type:ty ),* }) => {
+        #[derive(Serialize, Deserialize, Debug, Default)]
         pub(crate) struct $save_struct {
-            $( $field: $field_type ),*
+            $( $field: $field_type ),*,
+            $( $link_field: $crate::engine::save::Link<$link_field_type> ),*
         }
 
         impl $crate::engine::save::ComponentSaveLoad for $comp_type {
             fn to_save_data(&self) -> serde_json::Value {
                 let save_data = $save_struct {
-                    $( $field: self.$field.clone() ),*
+                    $( $field: self.$field.clone() ),*,
+                    $( $link_field: self.$link_field.clone() ),*
                 };
                 serde_json::to_value(save_data).unwrap()
             }
@@ -93,7 +171,8 @@ macro_rules! impl_save_load_input {
             fn from_save_data(data: serde_json::Value) -> std::sync::Arc<std::sync::Mutex<ComponentWrapper>> {
                 let save_data: $save_struct = serde_json::from_value(data).unwrap();
                 let component = std::sync::Arc::new(std::sync::Mutex::new(Self {
-                    $( $field: save_data.$field ),*
+                    $( $field: save_data.$field ),*,
+                    $( $link_field: save_data.$link_field ),*
                 }));
 
                 let ticker = std::sync::Arc::new(std::sync::Mutex::new(TickVariant::Input(component.clone() as std::sync::Arc<std::sync::Mutex<dyn InputTickBehavior>>)));
@@ -107,16 +186,18 @@ macro_rules! impl_save_load_input {
 
 #[macro_export]
 macro_rules! impl_save_load_render {
-    ($comp_type:ty, $save_struct:ident, $( $field:ident : $field_type:ty ),* ) => {
-        #[derive(Serialize, Deserialize, Debug)]
+    ($comp_type:ty, $save_struct:ident, { $( $field:ident : $field_type:ty ),* }, { $( $link_field:ident : $link_field_type:ty ),* }) => {
+        #[derive(Serialize, Deserialize, Debug, Default)]
         pub(crate) struct $save_struct {
-            $( $field: $field_type ),*
+            $( $field: $field_type ),*,
+            $( $link_field: $crate::engine::save::Link<$link_field_type> ),*
         }
 
         impl $crate::engine::save::ComponentSaveLoad for $comp_type {
             fn to_save_data(&self) -> serde_json::Value {
                 let save_data = $save_struct {
-                    $( $field: self.$field.clone() ),*
+                    $( $field: self.$field.clone() ),*,
+                    $( $link_field: self.$link_field.clone() ),*
                 };
                 serde_json::to_value(save_data).unwrap()
             }
@@ -124,7 +205,8 @@ macro_rules! impl_save_load_render {
             fn from_save_data(data: serde_json::Value) -> std::sync::Arc<std::sync::Mutex<ComponentWrapper>> {
                 let save_data: $save_struct = serde_json::from_value(data).unwrap();
                 let component = std::sync::Arc::new(std::sync::Mutex::new(Self {
-                    $( $field: save_data.$field ),*
+                    $( $field: save_data.$field ),*,
+                    $( $link_field: save_data.$link_field ),*
                 }));
 
                 let ticker = std::sync::Arc::new(std::sync::Mutex::new(TickVariant::Render(component.clone() as std::sync::Arc<std::sync::Mutex<dyn RenderTickBehavior>>)));
@@ -137,30 +219,19 @@ macro_rules! impl_save_load_render {
 }
 
 #[macro_export]
-macro_rules! impl_save_load {
-    ($comp_type:ty, $save_struct:ident, default, $( $field:ident : $field_type:ty ),* ) => {
-        impl_save_load_default!($comp_type, $save_struct, $( $field : $field_type ),*);
-    };
-    ($comp_type:ty, $save_struct:ident, input, $( $field:ident : $field_type:ty ),* ) => {
-        impl_save_load_input!($comp_type, $save_struct, $( $field : $field_type ),*);
-    };
-    ($comp_type:ty, $save_struct:ident, render, $( $field:ident : $field_type:ty ),* ) => {
-        impl_save_load_render!($comp_type, $save_struct, $( $field : $field_type ),*);
-    };
-}
-
-    #[macro_export]
 macro_rules! impl_static_save_load {
-    ($comp_type:ty, $save_struct:ident, $( $field:ident : $field_type:ty ),* ) => {
-        #[derive(Serialize, Deserialize, Debug)]
+    ($comp_type:ty, $save_struct:ident, { $( $field:ident : $field_type:ty ),* }, { $( $link_field:ident : $link_field_type:ty ),* }) => {
+        #[derive(Serialize, Deserialize, Debug, Default)]
         pub(crate) struct $save_struct {
-            $( $field: $field_type ),*
+            $( $field: $field_type ),*,
+            $( $link_field: $crate::engine::save::Link<$link_field_type> ),*
         }
 
         impl $crate::engine::save::StaticComponentSaveLoad for $comp_type {
             fn to_save_data(&self) -> serde_json::Value {
                 let save_data = $save_struct {
-                    $( $field: self.$field.clone() ),*
+                    $( $field: self.$field.clone() ),*,
+                    $( $link_field: self.$link_field.clone() ),*
                 };
                 serde_json::to_value(save_data).unwrap()
             }
@@ -168,7 +239,8 @@ macro_rules! impl_static_save_load {
             fn from_save_data(data: serde_json::Value) -> $crate::engine::static_component::Container {
                 let save_data: $save_struct = serde_json::from_value(data).unwrap();
                 let component = Self {
-                    $( $field: save_data.$field ),*
+                    $( $field: save_data.$field ),*,
+                    $( $link_field: save_data.$link_field ),*
                 };
                 $crate::engine::static_component::Container {
                     internal: std::sync::Arc::new(std::sync::Mutex::new(component))
@@ -180,11 +252,52 @@ macro_rules! impl_static_save_load {
     };
 }
 
+#[macro_export]
+macro_rules! impl_save_load {
+    ($comp_type:ty, $save_struct:ident, default, { $( $field:ident : $field_type:ty ),* }, { $( $link_field:ident : $link_field_type:ty ),* }) => {
+        impl_save_load_default!($comp_type, $save_struct, { $( $field : $field_type ),* }, { $( $link_field : $link_field_type ),* });
+    };
+    ($comp_type:ty, $save_struct:ident, input, { $( $field:ident : $field_type:ty ),* }, { $( $link_field:ident : $link_field_type:ty ),* }) => {
+        impl_save_load_input!($comp_type, $save_struct, { $( $field : $field_type ),* }, { $( $link_field : $link_field_type ),* });
+    };
+    ($comp_type:ty, $save_struct:ident, render, { $( $field:ident : $field_type:ty ),* }, { $( $link_field:ident : $link_field_type:ty ),* }) => {
+        impl_save_load_render!($comp_type, $save_struct, { $( $field : $field_type ),* }, { $( $link_field : $link_field_type ),* });
+    };
+}
+
+
 pub fn init() {
-    impl_save_load!(Transform, TransformSaveData, default, state: ComponentState, pos: [f32; 3], rot: [f32; 3]);
-    impl_save_load!(CharacterController2D, CharacterController2DSaveData, input, bounds: Option<Bounds2D>, moveamt: f32, rotamt: f32, state: ComponentState);
-    impl_save_load!(InputComponent, InputComponentSaveData, input, name: String, state: ComponentState);
-    impl_save_load!(RenderComponent, RenderComponentSaveData, render, name: String, state: ComponentState, obj: Primitives);
+    impl_save_load!(
+        Transform, 
+        TransformSaveData, 
+        default, 
+        { pos: [f32; 3], rot: [f32; 3], state: ComponentState },
+        { }
+    );
+    
+    impl_save_load!(
+        CharacterController2D, 
+        CharacterController2DSaveData, 
+        input, 
+        { moveamt: f32, rotamt: f32, bounds: Option<Bounds2D>, state: ComponentState },
+        { }
+    );
+    
+    impl_save_load!(
+        InputComponent, 
+        InputComponentSaveData, 
+        input, 
+        { name: String, state: ComponentState },
+        { }
+    );
+    
+    impl_save_load!(
+        RenderComponent, 
+        RenderComponentSaveData, 
+        render, 
+        { name: String, obj: Primitives, state: ComponentState },
+        { }
+    );
 }
 
 pub fn register_component<T: ComponentSaveLoad + 'static>(name: &str) {
@@ -229,7 +342,6 @@ impl EngineSaveData {
 
     pub fn from_engine_to_json(e: &mut Engine) -> String {
         let save = Self::from_engine(e);
-
         serde_json::to_string::<EngineSaveData>(&save).unwrap()
     }
 
@@ -318,23 +430,17 @@ impl ComponentSaveData {
 
         let (name, data) = {
             let name = comp_lock.name().to_string();
-
-            // let unwrap = &*comp_lock.lock().unwrap();
-            // print_traits!(comp_lock, &dyn ComponentSaveLoad, &dyn ComponentTrait);
             
             let data = ComponentTrait::to_save_data(comp_lock);
 
             (name, data)
         };
 
-        // drop(lock);
-
         Self { id: name, data }
     }
 
     pub fn to_component(&self) -> Arc<Mutex<ComponentWrapper>> {
         let registry = COMPONENT_REGISTRY.read().unwrap();
-        // println!("{:?}", registry.iter().map(|a| {a.0}).collect::<Vec<_>>());
         if let Some(constructor) = registry.get(&self.id) {
             constructor(self.data.clone())
         } else {
@@ -352,7 +458,6 @@ pub struct StaticComponentSaveData {
 impl StaticComponentSaveData {
     pub fn from_static_component(comp: Arc<Mutex<dyn StaticComponent>>) -> Self {
         let mut lock = comp.lock().unwrap();
-        // let id = stringify!(comp.lock().unwrap());
         let data = lock.to_save_data();
 
         Self { id: lock.name(), data }
