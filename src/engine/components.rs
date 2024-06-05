@@ -6,17 +6,22 @@ use crate::engine::component::{
 use crate::engine::gameobject::GameObject;
 use crate::engine::graphics_backend::color::Colors;
 use crate::engine::graphics_backend::primitives::Cube;
+use crate::impl_save_load;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use super::graphics_backend::object::{Object, self};
 use super::graphics_backend::primitives::{Primitives, self, Octagon};
+use super::save::ComponentSaveLoad;
+use serde::{Serialize, Deserialize};
+use lazy_static::lazy_static;
 
 pub struct RenderComponent {
-    name: String,
-    state: ComponentState,
-    obj: Primitives
+    pub name: String,
+    pub state: ComponentState,
+    pub obj: Primitives
 }
+
 
 impl ComponentTrait for RenderComponent {
     fn name(&self) -> &str {
@@ -64,20 +69,21 @@ impl RenderTickBehavior for RenderComponent {
 }
 
 impl RenderComponent {
-    pub fn new(name: String, obj: Primitives) -> Arc<Mutex<ComponentWrapper>> {
+    pub fn new(obj: Primitives) -> Arc<Mutex<ComponentWrapper>> {
         let component = Arc::new(Mutex::new(Self {
-            name,
+            name: "RenderComponent".to_string(),
             state: ComponentState::new(),
             obj,
         }));
         let tick_variant = Arc::new(Mutex::new(TickVariant::Render(component.clone())));
+
         Arc::new(Mutex::new(ComponentWrapper::new(component, tick_variant)))
     }
 }
 
 pub struct InputComponent {
-    name: String,
-    state: ComponentState,
+    pub name: String,
+    pub state: ComponentState,
 }
 
 impl ComponentTrait for InputComponent {
@@ -101,6 +107,7 @@ impl InputComponent {
             state: ComponentState::new(),
         }));
         let tick_variant = Arc::new(Mutex::new(TickVariant::Input(component.clone())));
+
         Arc::new(Mutex::new(ComponentWrapper::new(component, tick_variant)))
     }
 }

@@ -1,18 +1,21 @@
 use crate::engine::gameobject::GameObject;
 use crate::engine::graphics_backend::object::Object;
 use crate::engine::graphics_backend::vertex::Vertex;
+use crate::impl_save_load;
 use downcast_rs::impl_downcast;
 use downcast_rs::Downcast;
 use serde_json::Value;
 use std::any::{self, Any, TypeId};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use serde::{Serialize, Deserialize};
 
 use super::bounds;
 use super::bounds::Bounds2D;
 use super::camera;
+use crate::engine::save::{ComponentSaveLoad};
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ComponentState {
     _state: Value,
 }
@@ -31,16 +34,25 @@ impl ComponentState {
     }
 }
 
-impl_downcast!(ComponentTrait);
+impl Default for ComponentState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-pub trait ComponentTrait: Send + Sync + Downcast
+pub trait ComponentTrait: Send + Sync + Downcast + ComponentSaveLoad
 where
     Self: 'static,
 {
     fn name(&self) -> &str;
     fn state(&mut self) -> &mut ComponentState;
+    fn to_save_data(&self) -> Value {
+        ComponentSaveLoad::to_save_data(self)
+    }
     // fn tick_type(&mut self) -> &mut TickVariant;
 }
+
+impl_downcast!(ComponentTrait);
 
 #[derive(Debug, PartialEq)]
 pub enum ComponentType {
@@ -168,55 +180,55 @@ pub fn create_component_wrapper(
     Arc::new(Mutex::new(ComponentWrapper::new(component, tick_variant)))
 }
 
-pub struct LambdaComponent<F>
-where
-    F: FnMut(),
-{
-    name: String,
-    state: ComponentState,
-    tick_behavior: F,
-}
-
-impl<F> LambdaComponent<F>
-where
-    F: FnMut() + Send + Sync + 'static,
-{
-    pub fn new(name: String, tick_behavior: F) -> Arc<Mutex<ComponentWrapper>> {
-        let lambda_component = Arc::new(Mutex::new(Self {
-            name,
-            tick_behavior,
-            state: ComponentState::new(),
-        }));
-        let tick_variant = Arc::new(Mutex::new(TickVariant::Default(lambda_component.clone())));
-
-        Arc::new(Mutex::new(ComponentWrapper {
-            component: lambda_component as Arc<Mutex<dyn ComponentTrait>>,
-            ticker: tick_variant,
-        }))
-    }
-}
-
-impl<F> ComponentTrait for LambdaComponent<F>
-where
-    F: FnMut() + Send + Sync + 'static,
-{
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn state(&mut self) -> &mut ComponentState {
-        &mut self.state
-    }
-}
-
-impl<F> TickBehavior for LambdaComponent<F>
-where
-    F: FnMut() + Send + Sync + 'static,
-{
-    fn tick(&mut self, obj: &mut GameObject, dt: Duration) {
-        (self.tick_behavior)();
-    }
-}
+// pub struct LambdaComponent<F>
+// where
+//     F: FnMut(),
+// {
+//     pub name: String,
+//     pub state: ComponentState,
+//     pub tick_behavior: F,
+// }
+//
+// impl<F> LambdaComponent<F>
+// where
+//     F: FnMut() + Send + Sync + 'static,
+// {
+//     pub fn new(name: String, tick_behavior: F) -> Arc<Mutex<ComponentWrapper>> {
+//         let lambda_component = Arc::new(Mutex::new(Self {
+//             name,
+//             tick_behavior,
+//             state: ComponentState::new(),
+//         }));
+//         let tick_variant = Arc::new(Mutex::new(TickVariant::Default(lambda_component.clone())));
+//
+//         Arc::new(Mutex::new(ComponentWrapper {
+//             component: lambda_component as Arc<Mutex<dyn ComponentTrait>>,
+//             ticker: tick_variant,
+//         }))
+//     }
+// }
+//
+// impl<F> ComponentTrait for LambdaComponent<F>
+// where
+//     F: FnMut() + Send + Sync + 'static,
+// {
+//     fn name(&self) -> &str {
+//         &self.name
+//     }
+//
+//     fn state(&mut self) -> &mut ComponentState {
+//         &mut self.state
+//     }
+// }
+//
+// impl<F> TickBehavior for LambdaComponent<F>
+// where
+//     F: FnMut() + Send + Sync + 'static,
+// {
+//     fn tick(&mut self, obj: &mut GameObject, dt: Duration) {
+//         (self.tick_behavior)();
+//     }
+// }
 
 pub struct Transform {
     pub state: ComponentState,
@@ -253,6 +265,7 @@ impl Transform {
         }))
     }
 }
+
 
 pub struct CharacterController2D {
     pub moveamt: f32,
@@ -339,33 +352,33 @@ pub struct Rigidbody {
     pub collisions: bool,
 }
 
-impl ComponentTrait for Rigidbody {
-    fn name(&self) -> &str {
-        "Rigidbody"
-    }
-
-    fn state(&mut self) -> &mut ComponentState {
-        &mut self.state
-    }
-}
-
-impl TickBehavior for Rigidbody {
-    fn tick(&mut self, obj: &mut GameObject, dt: Duration) {}
-}
-
-impl Rigidbody {
-    pub fn new(gravity: bool, collisions: bool) -> Arc<Mutex<ComponentWrapper>> {
-        let s = Arc::new(Mutex::new(Self {
-            state: ComponentState::new(),
-            friction: 0.1,
-            gravity,
-            collisions,
-        }));
-        let tick_variant = Arc::new(Mutex::new(TickVariant::Default(s.clone())));
-
-        Arc::new(Mutex::new(ComponentWrapper {
-            component: s as Arc<Mutex<dyn ComponentTrait>>,
-            ticker: tick_variant,
-        }))
-    }
-}
+// impl ComponentTrait for Rigidbody {
+//     fn name(&self) -> &str {
+//         "Rigidbody"
+//     }
+//
+//     fn state(&mut self) -> &mut ComponentState {
+//         &mut self.state
+//     }
+// }
+//
+// impl TickBehavior for Rigidbody {
+//     fn tick(&mut self, obj: &mut GameObject, dt: Duration) {}
+// }
+//
+// impl Rigidbody {
+//     pub fn new(gravity: bool, collisions: bool) -> Arc<Mutex<ComponentWrapper>> {
+//         let s = Arc::new(Mutex::new(Self {
+//             state: ComponentState::new(),
+//             friction: 0.1,
+//             gravity,
+//             collisions,
+//         }));
+//         let tick_variant = Arc::new(Mutex::new(TickVariant::Default(s.clone())));
+//
+//         Arc::new(Mutex::new(ComponentWrapper {
+//             component: s as Arc<Mutex<dyn ComponentTrait>>,
+//             ticker: tick_variant,
+//         }))
+//     }
+// }

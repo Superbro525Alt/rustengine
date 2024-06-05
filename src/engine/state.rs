@@ -21,11 +21,12 @@ use winit::{
 };
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::engine::physics::PhysicsEngine;
 
-use super::save::EngineSaveData;
-use super::static_component::StaticComponent;
+use super::save::{EngineSaveData, StaticComponent};
+// use super::static_component::StaticComponent;
 use super::ui::UIElement;
 
 #[derive(Debug, Clone)]
@@ -86,7 +87,7 @@ impl AppEvent {
 
 pub struct EngineState {
     objects: Vec<i32>,
-    static_components: Vec<Arc<Mutex<dyn static_component::StaticComponent>>>,
+    pub static_components: Vec<Arc<Mutex<dyn static_component::StaticComponent>>>,
 }
 
 impl EngineState {
@@ -225,6 +226,18 @@ impl Engine {
 
     pub fn export(&mut self) -> EngineSaveData {
         EngineSaveData::from_engine(self)
+    }
+
+    pub fn export_raw(&mut self) -> String {
+        EngineSaveData::from_engine_to_json(self)
+    }
+
+    pub async fn import(mut data: EngineSaveData) -> (Self, EventLoop<()>) {
+        EngineSaveData::to_engine(&mut data).await
+    }
+
+    pub async fn import_from_json(data: String) -> (Self, EventLoop<()>) {
+        EngineSaveData::to_engine_from_data(data).await
     }
 
     pub fn tick(&mut self) {

@@ -2,7 +2,9 @@ use crate::engine::collider::Point;
 use crate::engine::graphics_backend::object::{BufferDesc, Object};
 use crate::engine::graphics_backend::Vertex;
 use std::f32::consts::PI;
+use serde::{Serialize, Deserialize};
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Primitives {
     Cube(f32, [f32; 3]),
     Triangle(f32, [f32; 3]),
@@ -11,6 +13,12 @@ pub enum Primitives {
     Octagon(f32, [f32; 3]),
     Line(Point, f32, f32, f32, [f32; 3]),
     RaycastLine(Point, f32, f32, f32, [f32; 3]),
+}
+
+impl Default for Primitives {
+    fn default() -> Self {
+        Self::Cube(0.0, [0.0,0.0,0.0])
+    }
 }
 
 #[derive(Clone)]

@@ -8,10 +8,10 @@ use std::{
     thread,
 };
 
-use crate::engine::collider::OctagonCollider;
+use crate::engine::{collider::OctagonCollider, save::{EngineSaveData, self}};
 #[allow(unused)]
 use crate::engine::component::ComponentTrait;
-use engine::{gameobject::{self, make_base_game_object, GameObject}, static_component::StaticComponent, component::{CharacterController2D, ComponentState, ComponentWrapper, TickVariant, InputTickBehavior, RenderTickBehavior, RenderOutput, Transform}, components::RenderComponent, graphics_backend::{primitives::{Primitives, self}, object::Object}, bounds::Bounds2D, raycast, collider::{CubeCollider, Point}};
+use engine::{gameobject::{self, make_base_game_object, GameObject}, static_component::StaticComponent, component::{CharacterController2D, ComponentState, ComponentWrapper, TickVariant, InputTickBehavior, RenderTickBehavior, RenderOutput, Transform}, components::RenderComponent, graphics_backend::{primitives::{Primitives, self}, object::Object}, bounds::Bounds2D, raycast, collider::{CubeCollider, Point}, time::OxidizedInstant};
 
 use serde::{Serialize, Deserialize};
 
@@ -27,6 +27,7 @@ fn main() {
     pollster::block_on(run());
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 struct Score {
     pub over: bool,
     pub score: u32
@@ -48,15 +49,19 @@ impl StaticComponent for Score {
             engine.pause();
         }
     }
+
+    fn name(&mut self) -> String {
+        "Score".to_string()
+    }
 }
 
 struct Spawner {
-    enemies: Vec<i32>,
-    last_spawn: Option<Instant>,
-    cooldown: Duration,
-    player: i32,
-    moveamt: f32,
-    scorer: Arc<Mutex<Score>>
+    pub enemies: Vec<i32>,
+    pub last_spawn: Option<OxidizedInstant>,
+    pub cooldown: Duration,
+    pub player: i32,
+    pub moveamt: f32,
+    pub scorer: Arc<Mutex<Score>>
 }
 
 impl Spawner {
@@ -72,6 +77,7 @@ impl Spawner {
     }
 
     pub fn spawn(&mut self, e: &mut engine::state::Engine, mut bounds: Bounds2D) {
+        // println!("tick");
         let mut rng = rand::thread_rng();
         // println!("{} {}", bounds.x(), bounds.y());
         let mut pos = Point {
@@ -92,7 +98,7 @@ impl Spawner {
         let mut lock = exp.lock().unwrap();
 
 
-        lock.add_component(RenderComponent::new("enemy render ".to_string() + &self.enemies.len().to_string(), Primitives::Octagon(0.1, [1.0, 0.0, 0.0])));
+        lock.add_component(RenderComponent::new(Primitives::Octagon(0.1, [1.0, 0.0, 0.0])));
 
         lock.add_collider(Arc::new(Mutex::new(OctagonCollider::new(0.1))));
 
@@ -110,13 +116,14 @@ impl Spawner {
 impl StaticComponent for Spawner {
     fn tick(&mut self, e: &mut engine::state::Engine) {
         if let Some(last_spawn) = self.last_spawn {
-            if Instant::now() >= last_spawn + self.cooldown {
+            println!("{:?}", OxidizedInstant::now());
+            if OxidizedInstant::now() >= last_spawn + self.cooldown {
                 self.spawn(e, Bounds2D::new(2.7, 2.0));
-                self.last_spawn = Some(Instant::now());
+                self.last_spawn = Some(OxidizedInstant::now());
             }
         } else {
             self.spawn(e, Bounds2D::new(2.7, 2.0));
-            self.last_spawn = Some(Instant::now());
+            self.last_spawn = Some(OxidizedInstant::now());
         }
 
         let player_obj = GameObject::find_by_id(self.player).clone();
@@ -173,13 +180,17 @@ impl StaticComponent for Spawner {
             });
         }
     }
+
+    fn name(&mut self) -> String {
+        "Spawner".to_string()
+    }
 }
 
 struct ShootComponent {
-    state: ComponentState,
-    cooldown: Duration,
-    last_pressed: Option<Instant>,
-    score: Arc<Mutex<Score>>
+    pub state: ComponentState,
+    pub cooldown: Duration,
+    pub last_pressed: Option<OxidizedInstant>,
+    pub score: Arc<Mutex<Score>>
 }
 
 impl ShootComponent {
@@ -198,7 +209,7 @@ impl ShootComponent {
 
 impl ComponentTrait for ShootComponent {
     fn name(&self) -> &str {
-        "Shooter"
+        "ShootComponent"
     }
 
     fn state(&mut self) -> &mut engine::component::ComponentState {
@@ -208,8 +219,8 @@ impl ComponentTrait for ShootComponent {
 
 impl InputTickBehavior for ShootComponent {
     fn tick_with_input(&mut self, input: &engine::component::InputData, obj: &mut GameObject, dt: Duration) {
-        if let Some(last_pressed) = self.last_pressed {
-            if Instant::now() >= last_pressed + self.cooldown {
+        if let Some(last_pressed) = &self.last_pressed {
+            if OxidizedInstant::now() >= *last_pressed + self.cooldown {
                 self.last_pressed = None
             } else { 
                 return;
@@ -238,7 +249,7 @@ impl InputTickBehavior for ShootComponent {
         for key in input.keys_pressed.clone() {
             match key {
                 winit::event::VirtualKeyCode::Space => {
-                    self.last_pressed = Some(Instant::now());
+                    self.last_pressed = Some(OxidizedInstant::now());
                     let cast = raycast::Raycast::send(point.clone(), rot[2] + 90.0, 1000.0, vec![obj.id()]);
                     let mut result = cast.unwrap();
 
@@ -263,10 +274,10 @@ impl InputTickBehavior for ShootComponent {
 }
 
 struct BulletRenderer {
-    state: ComponentState,
-    thickness: f32,
-    to_set_thickness: f32,
-    timeout_end: Option<Instant>,
+    pub state: ComponentState,
+    pub thickness: f32,
+    pub to_set_thickness: f32,
+    pub timeout_end: Option<OxidizedInstant>,
 }
 
 impl BulletRenderer {
@@ -283,12 +294,12 @@ impl BulletRenderer {
 
     pub fn set_thickness_timeout(&mut self, thickness: f32, timeout: Duration) {
         self.to_set_thickness = thickness;
-        self.timeout_end = Some(Instant::now() + timeout);
+        self.timeout_end = Some(OxidizedInstant::now() + timeout);
     }
 
     fn tick(&mut self) {
-        if let Some(timeout_end) = self.timeout_end {
-            if Instant::now() >= timeout_end {
+        if let Some(timeout_end) = &self.timeout_end {
+            if OxidizedInstant::now() >= *timeout_end {
                 self.thickness = self.to_set_thickness;
                 self.timeout_end = None;
             }
@@ -334,21 +345,40 @@ impl RenderTickBehavior for BulletRenderer {
     }
 }
 
-
 async fn run() {
-    let (mut e, eventloop) =
-        engine::state::Engine::new(true, EventLoopBuilder::<()>::with_user_event().build()).await;
+    save::init();
+    // let (mut e, eventloop) =
+    //     engine::state::Engine::new(true, EventLoopBuilder::<()>::with_user_event().build()).await;
 
-    let ship = e.add_object(gameobject::make_base_game_object(String::from("ship")));
+    impl_save_load!(ShootComponent, ShootComponentSaveData, input, 
+        state: ComponentState, 
+        cooldown: Duration, 
+        last_pressed: Option<OxidizedInstant>, 
+        score: Arc<Mutex<Score>>
+    );
 
-    let scorer = Score::new();
+    impl_save_load!(BulletRenderer, BulletRendererSaveData, render, 
+        state: ComponentState, 
+        thickness: f32, 
+        to_set_thickness: f32, 
+        timeout_end: Option<OxidizedInstant>
+    );
 
-    gameobject::add_component(ship, CharacterController2D::new(Some(Bounds2D::new(2.7, 2.0))));
-    gameobject::add_component(ship, RenderComponent::new(String::from("ship render"), Primitives::Triangle(0.1, [0.0, 1.0, 0.0])));
-    gameobject::add_collider(ship, Arc::new(Mutex::new(CubeCollider::new(0.1))));
-    gameobject::add_component(ship, BulletRenderer::new());
-    gameobject::add_component(ship, ShootComponent::new(scorer.clone()));
+    impl_static_save_load!(Score, ScoreSaveData, over: bool, score: u32);
 
+    impl_static_save_load!(Spawner, SpawnerSaveData, enemies: Vec<i32>, last_spawn: Option<OxidizedInstant>, cooldown: Duration, player: i32, moveamt: f32, scorer: Arc<Mutex<Score>>);
+
+    //
+    // let ship = e.add_object(gameobject::make_base_game_object(String::from("ship")));
+    // //
+    // let scorer = Score::new();
+    //
+    // gameobject::add_component(ship, CharacterController2D::new(Some(Bounds2D::new(2.7, 2.0))));
+    // gameobject::add_component(ship, RenderComponent::new(Primitives::Triangle(0.1, [0.0, 1.0, 0.0])));
+    // gameobject::add_collider(ship, Arc::new(Mutex::new(CubeCollider::new(0.1))));
+    // gameobject::add_component(ship, BulletRenderer::new());
+    // gameobject::add_component(ship, ShootComponent::new(scorer.clone()));
+    //
     // let enemy = e.add_object(make_base_game_object("enemy ".to_owned()));
     // let op = GameObject::find_by_id(enemy).clone();
     // let exp = op.expect("cannot find");
@@ -359,13 +389,23 @@ async fn run() {
     // lock.add_collider(Arc::new(Mutex::new(OctagonCollider::new(0.1))));
     //
     // drop(lock);
-    
-    e.add_static(scorer.clone());
-    e.add_static(Spawner::new(ship, scorer));
+
+    // e.add_static(scorer.clone());
+    // e.add_static(Spawner::new(ship, scorer));
+
+    let (mut e, eventloop) =
+        // engine::state::Engine::import(EngineSaveData {
+        //     objects: Vec::new(),
+        //     static_components: Vec::new(),
+        //     graphics: true
+        // }).await;
+        engine::state::Engine::import_from_json(String::from("{\"objects\":[{\"components\":[{\"id\":\"Transform\",\"data\":{\"pos\":[0.0,0.0,0.0],\"rot\":[0.0,0.0,0.0],\"state\":{\"_state\":null}}},{\"id\":\"CharacterController2D\",\"data\":{\"bounds\":{\"limits\":{\"x\":{\"x\":2.700000047683716},\"y\":{\"y\":2.0}}},\"moveamt\":0.009999999776482582,\"rotamt\":2.0,\"state\":{\"_state\":null}}},{\"id\":\"RenderComponent\",\"data\":{\"name\":\"RenderComponent\",\"obj\":{\"Triangle\":[0.10000000149011612,[0.0,1.0,0.0]]},\"state\":{\"_state\":null}}},{\"id\":\"BulletRenderer\",\"data\":{\"state\":{\"_state\":null},\"thickness\":0.009999999776482582,\"timeout_end\":null,\"to_set_thickness\":0.009999999776482582}},{\"id\":\"ShootComponent\",\"data\":{\"cooldown\":{\"nanos\":500000000,\"secs\":0},\"last_pressed\":null,\"score\":{\"over\":false,\"score\":0},\"state\":{\"_state\":null}}}],\"colliders\":[{\"collider\":{\"CubeCollider\":{\"side_length\":0.1}}}],\"parent\":null,\"children\":[],\"id\":0,\"name\":\"ship\",\"active\":true}],\"static_components\":[{\"id\":\"Score\",\"data\":{\"over\":false,\"score\":0}},{\"id\":\"Spawner\",\"data\":{\"cooldown\":{\"nanos\":500000000,\"secs\":0},\"enemies\":[],\"last_spawn\":null,\"moveamt\":1.0,\"player\":0,\"scorer\":{\"over\":false,\"score\":0}}}],\"graphics\":true}")).await;        
+
+    // e.add_object(make_base_game_object("ok".to_owned()));
 
     let e = Arc::new(Mutex::new(e));
 
-    println!("{:?}", e.lock().unwrap().export());
+    println!("{:?}", e.lock().unwrap().export_raw());
 
     engine::state::Engine::run(e, eventloop);
 }

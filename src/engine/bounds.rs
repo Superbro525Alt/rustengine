@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct XLimits {
     pub x: f32,
 }
@@ -19,7 +19,7 @@ impl XLimits {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct YLimits {
     pub y: f32,
 }
@@ -57,7 +57,7 @@ impl ZLimits {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Limits2D {
     pub x: XLimits,
     pub y: YLimits,
@@ -125,7 +125,7 @@ impl Limits3D {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Bounds2D {
     pub limits: Limits2D,
 }

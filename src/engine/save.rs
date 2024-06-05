@@ -1,22 +1,217 @@
-use downcast_rs::Downcast;
+use downcast_rs::{impl_downcast, Downcast};
+use crate::engine::static_component::Container;
+use crate::engine::component::ComponentState;
 use winit::event_loop::{EventLoopBuilder, EventLoop};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
-use crate::engine::component::{ComponentWrapper, ComponentTrait};
+use crate::engine::component::{ComponentWrapper, ComponentTrait, TickBehavior, Transform};
 use crate::engine::collider::{Collider, CubeCollider, RectangularPrismCollider, PointCollider, OctagonCollider, Point};
 use crate::engine::bounds::{Bounds2D, Bounds3D, Limits2D, Limits3D};
 use crate::engine::gameobject::{GameObject, GameObjectState};
 use std::collections::HashMap;
 use lazy_static::lazy_static;
+use super::component::{TickVariant, InputTickBehavior, RenderTickBehavior, self, CharacterController2D};
+use super::components::{InputComponent, RenderComponent};
+use super::graphics_backend::primitives::Primitives;
 use super::state::Engine;
-use super::static_component::StaticComponent;
+pub use super::static_component::StaticComponent;
+use std::any::Any;
+use std::time::Duration;
+
+// Define a trait for serialization and deserialization
+pub(crate) trait ComponentSaveLoad: Send + Sync + Downcast + std::any::Any {
+    fn to_save_data(&self) -> Value;
+    fn from_save_data(data: Value) -> Arc<Mutex<ComponentWrapper>>
+    where
+        Self: Sized;
+    // fn init()
+    // where 
+    //     Self: Sized;
+}
+
+pub(crate) trait StaticComponentSaveLoad: Send + Sync + Downcast + std::any::Any {
+    fn to_save_data(&self) -> Value;
+    fn from_save_data(data: Value) -> Container where Self: Sized;
+}
+
+// impl_downcast!(ComponentSaveLoad);
+
+
+lazy_static::lazy_static! {
+    static ref COMPONENT_REGISTRY: std::sync::RwLock<std::collections::HashMap<String, Box<dyn Fn(serde_json::Value) -> std::sync::Arc<std::sync::Mutex<ComponentWrapper>> + Send + Sync>>> = std::sync::RwLock::new(std::collections::HashMap::new());
+    static ref STATIC_COMPONENT_REGISTRY: RwLock<HashMap<String, Box<dyn Fn(Value) -> Arc<Mutex<dyn StaticComponent>> + Send + Sync>>> = RwLock::new(HashMap::new());
+}
+
+#[macro_export]
+macro_rules! impl_save_load_default {
+    ($comp_type:ty, $save_struct:ident, $( $field:ident : $field_type:ty ),* ) => {
+        #[derive(Serialize, Deserialize, Debug)]
+        pub(crate) struct $save_struct {
+            $( $field: $field_type ),*
+        }
+
+        impl $crate::engine::save::ComponentSaveLoad for $comp_type {
+            fn to_save_data(&self) -> serde_json::Value {
+                let save_data = $save_struct {
+                    $( $field: self.$field.clone() ),*
+                };
+                serde_json::to_value(save_data).unwrap()
+            }
+
+            fn from_save_data(data: serde_json::Value) -> std::sync::Arc<std::sync::Mutex<ComponentWrapper>> {
+                let save_data: $save_struct = serde_json::from_value(data).unwrap();
+                let component = std::sync::Arc::new(std::sync::Mutex::new(Self {
+                    $( $field: save_data.$field ),*
+                }));
+
+                let ticker = std::sync::Arc::new(std::sync::Mutex::new(TickVariant::Default(component.clone() as std::sync::Arc<std::sync::Mutex<dyn TickBehavior>>)));
+
+                std::sync::Arc::new(std::sync::Mutex::new(ComponentWrapper::new(component as std::sync::Arc<std::sync::Mutex<dyn ComponentTrait>>, ticker)))
+            }
+        }
+        $crate::engine::save::register_component::<$comp_type>(stringify!($comp_type));
+    };
+}
+
+#[macro_export]
+macro_rules! impl_save_load_input {
+    ($comp_type:ty, $save_struct:ident, $( $field:ident : $field_type:ty ),* ) => {
+        #[derive(Serialize, Deserialize, Debug)]
+        pub(crate) struct $save_struct {
+            $( $field: $field_type ),*
+        }
+
+        impl $crate::engine::save::ComponentSaveLoad for $comp_type {
+            fn to_save_data(&self) -> serde_json::Value {
+                let save_data = $save_struct {
+                    $( $field: self.$field.clone() ),*
+                };
+                serde_json::to_value(save_data).unwrap()
+            }
+
+            fn from_save_data(data: serde_json::Value) -> std::sync::Arc<std::sync::Mutex<ComponentWrapper>> {
+                let save_data: $save_struct = serde_json::from_value(data).unwrap();
+                let component = std::sync::Arc::new(std::sync::Mutex::new(Self {
+                    $( $field: save_data.$field ),*
+                }));
+
+                let ticker = std::sync::Arc::new(std::sync::Mutex::new(TickVariant::Input(component.clone() as std::sync::Arc<std::sync::Mutex<dyn InputTickBehavior>>)));
+
+                std::sync::Arc::new(std::sync::Mutex::new(ComponentWrapper::new(component as std::sync::Arc<std::sync::Mutex<dyn ComponentTrait>>, ticker)))
+            }
+        }
+        $crate::engine::save::register_component::<$comp_type>(stringify!($comp_type));
+    };
+}
+
+#[macro_export]
+macro_rules! impl_save_load_render {
+    ($comp_type:ty, $save_struct:ident, $( $field:ident : $field_type:ty ),* ) => {
+        #[derive(Serialize, Deserialize, Debug)]
+        pub(crate) struct $save_struct {
+            $( $field: $field_type ),*
+        }
+
+        impl $crate::engine::save::ComponentSaveLoad for $comp_type {
+            fn to_save_data(&self) -> serde_json::Value {
+                let save_data = $save_struct {
+                    $( $field: self.$field.clone() ),*
+                };
+                serde_json::to_value(save_data).unwrap()
+            }
+
+            fn from_save_data(data: serde_json::Value) -> std::sync::Arc<std::sync::Mutex<ComponentWrapper>> {
+                let save_data: $save_struct = serde_json::from_value(data).unwrap();
+                let component = std::sync::Arc::new(std::sync::Mutex::new(Self {
+                    $( $field: save_data.$field ),*
+                }));
+
+                let ticker = std::sync::Arc::new(std::sync::Mutex::new(TickVariant::Render(component.clone() as std::sync::Arc<std::sync::Mutex<dyn RenderTickBehavior>>)));
+
+                std::sync::Arc::new(std::sync::Mutex::new(ComponentWrapper::new(component as std::sync::Arc<std::sync::Mutex<dyn ComponentTrait>>, ticker)))
+            }
+        }
+        $crate::engine::save::register_component::<$comp_type>(stringify!($comp_type));
+    };
+}
+
+#[macro_export]
+macro_rules! impl_save_load {
+    ($comp_type:ty, $save_struct:ident, default, $( $field:ident : $field_type:ty ),* ) => {
+        impl_save_load_default!($comp_type, $save_struct, $( $field : $field_type ),*);
+    };
+    ($comp_type:ty, $save_struct:ident, input, $( $field:ident : $field_type:ty ),* ) => {
+        impl_save_load_input!($comp_type, $save_struct, $( $field : $field_type ),*);
+    };
+    ($comp_type:ty, $save_struct:ident, render, $( $field:ident : $field_type:ty ),* ) => {
+        impl_save_load_render!($comp_type, $save_struct, $( $field : $field_type ),*);
+    };
+}
+
+    #[macro_export]
+macro_rules! impl_static_save_load {
+    ($comp_type:ty, $save_struct:ident, $( $field:ident : $field_type:ty ),* ) => {
+        #[derive(Serialize, Deserialize, Debug)]
+        pub(crate) struct $save_struct {
+            $( $field: $field_type ),*
+        }
+
+        impl $crate::engine::save::StaticComponentSaveLoad for $comp_type {
+            fn to_save_data(&self) -> serde_json::Value {
+                let save_data = $save_struct {
+                    $( $field: self.$field.clone() ),*
+                };
+                serde_json::to_value(save_data).unwrap()
+            }
+
+            fn from_save_data(data: serde_json::Value) -> $crate::engine::static_component::Container {
+                let save_data: $save_struct = serde_json::from_value(data).unwrap();
+                let component = Self {
+                    $( $field: save_data.$field ),*
+                };
+                $crate::engine::static_component::Container {
+                    internal: std::sync::Arc::new(std::sync::Mutex::new(component))
+                }
+            }
+        }
+
+        $crate::engine::save::register_static_component::<$comp_type>(stringify!($comp_type));
+    };
+}
+
+pub fn init() {
+    impl_save_load!(Transform, TransformSaveData, default, state: ComponentState, pos: [f32; 3], rot: [f32; 3]);
+    impl_save_load!(CharacterController2D, CharacterController2DSaveData, input, bounds: Option<Bounds2D>, moveamt: f32, rotamt: f32, state: ComponentState);
+    impl_save_load!(InputComponent, InputComponentSaveData, input, name: String, state: ComponentState);
+    impl_save_load!(RenderComponent, RenderComponentSaveData, render, name: String, state: ComponentState, obj: Primitives);
+}
+
+pub fn register_component<T: ComponentSaveLoad + 'static>(name: &str) {
+    let mut registry = COMPONENT_REGISTRY.write().unwrap();
+    registry.insert(
+        name.to_string(),
+        Box::new(|data: Value| -> Arc<Mutex<ComponentWrapper>> {
+            T::from_save_data(data)
+        }) as Box<dyn Fn(Value) -> Arc<Mutex<ComponentWrapper>> + Send + Sync>,
+    );
+}
+
+pub fn register_static_component<T: StaticComponentSaveLoad + 'static>(name: &str) {
+    let mut registry = STATIC_COMPONENT_REGISTRY.write().unwrap();
+    registry.insert(
+        name.to_string(),
+        Box::new(|data: Value| -> Arc<Mutex<dyn StaticComponent>> {
+            T::from_save_data(data).internal
+        }) as Box<dyn Fn(Value) -> Arc<Mutex<dyn StaticComponent>> + Send + Sync>,
+    );
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct EngineSaveData {
-    objects: Vec<GameObjectSaveData>,
-    static_components: Vec<StaticComponentSaveData>,
-    graphics: bool
+    pub objects: Vec<GameObjectSaveData>,
+    pub static_components: Vec<StaticComponentSaveData>,
+    pub graphics: bool,
 }
 
 impl EngineSaveData {
@@ -25,10 +220,17 @@ impl EngineSaveData {
             objects: e.state.objects().iter_mut().map(|obj| {
                 GameObjectSaveData::from_game_object(&mut GameObject::find_by_id(*obj).expect("cannot find associated object").lock().unwrap())
             }).collect(),
-            static_components: Vec::new(),
-            graphics: e.graphics
+            static_components: e.state.static_components.iter().map(|static_comp| {
+                StaticComponentSaveData::from_static_component(static_comp.clone())
+            }).collect(),
+            graphics: e.graphics,
         }
+    }
 
+    pub fn from_engine_to_json(e: &mut Engine) -> String {
+        let save = Self::from_engine(e);
+
+        serde_json::to_string::<EngineSaveData>(&save).unwrap()
     }
 
     pub async fn to_engine(&mut self) -> (Engine, EventLoop<()>) {
@@ -43,15 +245,23 @@ impl EngineSaveData {
         }
 
         for static_comp in e.static_components.iter_mut() {
-            // engine.0.add_static(static_comp.to_component());
+            engine.0.add_static(static_comp.to_static_component());
         }
 
         engine
     }
+
+    pub async fn to_engine_from_data(data: String) -> (Engine, EventLoop<()>) {
+        let save = serde_json::from_str(&data).unwrap();
+
+        let mut e = serde_json::from_value::<Self>(save).unwrap();
+
+        Self::to_engine(&mut e).await
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct GameObjectSaveData {
+pub struct GameObjectSaveData {
     components: Vec<ComponentSaveData>,
     colliders: Vec<ColliderSaveData>,
     parent: Option<i32>,
@@ -64,10 +274,8 @@ struct GameObjectSaveData {
 impl GameObjectSaveData {
     pub fn from_game_object(obj: &GameObject) -> Self {
         GameObjectSaveData {
-            // components: obj.components.iter().map(|c| c.lock().unwrap().serialize()).collect(),
-            // colliders: obj.colliders.iter().map(|c| ColliderSaveData::from_collider(c.clone())).collect(),
-            components: Vec::new(),
-            colliders: Vec::new(),
+            components: obj.components.iter().map(|c| ComponentSaveData::from_component(c.clone())).collect(),
+            colliders: obj.colliders.iter().map(|c| ColliderSaveData::from_collider(c.clone())).collect(),
             parent: obj.state.parent_id,
             children: obj.state.child_ids.clone(),
             id: obj.id,
@@ -80,7 +288,7 @@ impl GameObjectSaveData {
         let obj = GameObject::new(self.name.clone(), vec![], GameObjectState::new(self.active, self.parent, self.children.clone()));
 
         for comp in &self.components {
-            // obj.lock().unwrap().add_component(ComponentWrapper::deserialize(comp.clone()));
+            obj.lock().unwrap().add_component(comp.to_component());
         }
 
         for coll in &self.colliders {
@@ -92,21 +300,74 @@ impl GameObjectSaveData {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct ComponentSaveData {
-    
+pub struct ComponentSaveData {
+    id: String,
+    data: Value,
+}
+
+impl ComponentSaveData {
+    pub fn from_component(comp: Arc<Mutex<ComponentWrapper>>) -> Self {
+        let mut lock = match comp.try_lock() {
+            Ok(lock) => lock,
+            Err(_) => {
+                panic!("couldn't get lock");
+            }
+        };
+
+        let comp_lock = (&mut *lock.component.lock().unwrap());
+
+        let (name, data) = {
+            let name = comp_lock.name().to_string();
+
+            // let unwrap = &*comp_lock.lock().unwrap();
+            // print_traits!(comp_lock, &dyn ComponentSaveLoad, &dyn ComponentTrait);
+            
+            let data = ComponentTrait::to_save_data(comp_lock);
+
+            (name, data)
+        };
+
+        // drop(lock);
+
+        Self { id: name, data }
+    }
+
+    pub fn to_component(&self) -> Arc<Mutex<ComponentWrapper>> {
+        let registry = COMPONENT_REGISTRY.read().unwrap();
+        // println!("{:?}", registry.iter().map(|a| {a.0}).collect::<Vec<_>>());
+        if let Some(constructor) = registry.get(&self.id) {
+            constructor(self.data.clone())
+        } else {
+            panic!("Unknown component type: {}", self.id);
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct StaticComponentSaveData {
+pub struct StaticComponentSaveData {
+    id: String,
+    data: Value,
 }
 
-// impl StaticComponentSaveData {
-//     pub fn to_static(&mut self) -> Arc<Mutex<dyn StaticComponent>> {
-//     }
-//
-//     pub fn from_static(s: Arc<Mutex<dyn StaticComponent>>) -> Self {
-//     }
-// }
+impl StaticComponentSaveData {
+    pub fn from_static_component(comp: Arc<Mutex<dyn StaticComponent>>) -> Self {
+        let mut lock = comp.lock().unwrap();
+        // let id = stringify!(comp.lock().unwrap());
+        let data = lock.to_save_data();
+
+        Self { id: lock.name(), data }
+    }
+
+    pub fn to_static_component(&self) -> Arc<Mutex<dyn StaticComponent>> {
+        let registry = STATIC_COMPONENT_REGISTRY.read().unwrap();
+        println!("{:?}", registry.iter().map(|a| {a.0}).collect::<Vec<_>>());
+        if let Some(constructor) = registry.get(&self.id) {
+            constructor(self.data.clone())
+        } else {
+            panic!("Unknown static component type: {}", self.id);
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ColliderType {
@@ -122,7 +383,7 @@ pub struct ColliderSaveData {
 }
 
 impl ColliderSaveData {
-    pub fn from_collider(collider: Arc<Mutex<dyn Collider>>) -> Self {
+    pub fn from_collider(collider: Arc<Mutex<Box<dyn Collider>>>) -> Self {
         let lock = collider.lock().unwrap();
         let collider_type = if let Some(cube) = lock.downcast_ref::<CubeCollider>() {
             ColliderType::CubeCollider { side_length: cube.side_length }
@@ -148,4 +409,3 @@ impl ColliderSaveData {
         }
     }
 }
-
