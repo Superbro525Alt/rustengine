@@ -25,6 +25,7 @@ use serde_json::Value;
 
 use crate::engine::physics::PhysicsEngine;
 
+use super::save::Link;
 use super::save::{EngineSaveData, StaticComponent};
 // use super::static_component::StaticComponent;
 use super::ui::UIElement;
@@ -108,6 +109,15 @@ impl EngineState {
 
     pub fn add_static(&mut self, obj: Arc<Mutex<dyn static_component::StaticComponent>>) {
         self.static_components.push(obj);
+    }
+
+    pub fn add_static_linked<T>(&mut self, data: Arc<Mutex<T>>) -> Link<T>
+    where
+        T: StaticComponent + Clone + 'static,
+    {
+        let link = Link::new(data.clone());
+        self.static_components.push(data);
+        link
     }
 }
 
@@ -286,6 +296,13 @@ impl Engine {
 
     pub fn add_static(&mut self, comp: Arc<Mutex<dyn static_component::StaticComponent>>) {
         self.state.add_static(comp);
+    }
+
+    pub fn add_static_linked<T>(&mut self, data: Arc<Mutex<T>>) -> Link<T>
+    where
+        T: StaticComponent + Clone + 'static,
+    {
+        self.state.add_static_linked(data)
     }
 
     pub fn add_ui_element(&mut self, element: UIElement) {

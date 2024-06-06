@@ -16,6 +16,7 @@ use super::save::ComponentSaveLoad;
 use serde::{Serialize, Deserialize};
 use lazy_static::lazy_static;
 
+#[derive(Clone)]
 pub struct RenderComponent {
     pub name: String,
     pub state: ComponentState,
@@ -81,6 +82,7 @@ impl RenderComponent {
     }
 }
 
+#[derive(Clone)]
 pub struct InputComponent {
     pub name: String,
     pub state: ComponentState,

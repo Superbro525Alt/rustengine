@@ -230,6 +230,7 @@ pub fn create_component_wrapper(
 //     }
 // }
 
+#[derive(Clone)]
 pub struct Transform {
     pub state: ComponentState,
     pub pos: [f32; 3],
@@ -266,7 +267,7 @@ impl Transform {
     }
 }
 
-
+#[derive(Clone)]
 pub struct CharacterController2D {
     pub moveamt: f32,
     pub state: ComponentState,
@@ -345,6 +346,7 @@ impl CharacterController2D {
     }
 }
 
+#[derive(Clone)]
 pub struct Rigidbody {
     pub state: ComponentState,
     pub friction: f32,
