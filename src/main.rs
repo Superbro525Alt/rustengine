@@ -25,6 +25,8 @@ use log;
 
 use uuid::Uuid;
 use std::collections::HashMap;
+use crate::save::register_link;
+use crate::log::info;
 // pub use engine::save::{get_link};
 
 fn main() {
@@ -46,6 +48,7 @@ impl Score {
 
 impl StaticComponent for Score {
     fn tick(&mut self, engine: &mut engine::state::Engine) {
+        println!("static score: {}", self.score);
         if !self.over {
             engine.add_ui_element(engine::ui::UIElement::Text(engine::ui::text::Text { content: String::from("Score: ".to_owned() + &self.score.to_string().to_owned()), position: cgmath::Point2 { x: -335.0, y: -275.0 }, color: [0.0, 1.0, 0.0, 1.0], origin: engine::ui::text::TextOrigin::Center }));
         }
@@ -60,7 +63,7 @@ impl StaticComponent for Score {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Spawner {
     pub enemies: Vec<i32>,
     pub last_spawn: Option<OxidizedInstant>,
@@ -359,6 +362,8 @@ impl RenderTickBehavior for BulletRenderer {
 async fn run() {
     save::init();
 
+    info!("ok");
+
     impl_save_load!(ShootComponent, ShootComponentSaveData, input, 
         {
             state: ComponentState, 
@@ -401,31 +406,31 @@ async fn run() {
         }
     );
 
-    let (mut e, eventloop) =
-        engine::state::Engine::new(true, EventLoopBuilder::<()>::with_user_event().build()).await;
-
-    let ship = e.add_object(gameobject::make_base_game_object(String::from("ship")));
-    let scorer = Score::new();
-    let scorer_link = e.add_static_linked(scorer.clone());
-
-    // println!("{}", scorer_link.id.unwrap() == scorer_link.clone().id.unwrap());
-
-    gameobject::add_component(ship, CharacterController2D::new(Some(Bounds2D::new(2.7, 2.0))));
-    gameobject::add_component(ship, RenderComponent::new(Primitives::Triangle(0.1, [0.0, 1.0, 0.0])));
-    gameobject::add_collider(ship, Arc::new(Mutex::new(CubeCollider::new(0.1))));
-    gameobject::add_component(ship, BulletRenderer::new());
-    gameobject::add_component(ship, ShootComponent::new(scorer_link.clone()));
-
-    e.add_static(Spawner::new(ship, scorer_link));
-
     // let (mut e, eventloop) =
-        // engine::state::Engine::import_from_json(String::from("{\"objects\":[{\"components\":[{\"id\":\"Transform\",\"data\":{\"pos\":[0.0,0.0,0.0],\"rot\":[0.0,0.0,0.0],\"state\":{\"_state\":null},\"uuid\":\"39c7d902-a5d3-45ea-8192-44ec4279189e\"}},{\"id\":\"CharacterController2D\",\"data\":{\"bounds\":{\"limits\":{\"x\":{\"x\":2.700000047683716},\"y\":{\"y\":2.0}}},\"moveamt\":0.009999999776482582,\"rotamt\":2.0,\"state\":{\"_state\":null},\"uuid\":\"39e83b90-e38a-43cf-8bc9-bc4ff295d4ca\"}},{\"id\":\"RenderComponent\",\"data\":{\"name\":\"RenderComponent\",\"obj\":{\"Triangle\":[0.10000000149011612,[0.0,1.0,0.0]]},\"state\":{\"_state\":null},\"uuid\":\"667ec422-a8e1-4499-8e75-0652df342a29\"}},{\"id\":\"BulletRenderer\",\"data\":{\"state\":{\"_state\":null},\"thickness\":0.009999999776482582,\"timeout_end\":null,\"to_set_thickness\":0.009999999776482582,\"uuid\":\"1628a4ac-e511-454c-93c8-cdc4d9c3c9e4\"}},{\"id\":\"ShootComponent\",\"data\":{\"cooldown\":{\"nanos\":500000000,\"secs\":0},\"last_pressed\":null,\"scorer\":\"2764eff0-4173-44c4-9e54-9bbfb6721e60\",\"state\":{\"_state\":null},\"uuid\":\"371fd121-85f8-4f1e-946a-3f482ce3de8d\"}}],\"colliders\":[{\"collider\":{\"CubeCollider\":{\"side_length\":0.1}}}],\"parent\":null,\"children\":[],\"id\":0,\"name\":\"ship\",\"active\":true}],\"static_components\":[{\"id\":\"Score\",\"data\":{\"over\":false,\"score\":0,\"uuid\":\"ac1365de-0ab0-47b1-9d39-3681f244c79c\"}},{\"id\":\"Spawner\",\"data\":{\"cooldown\":{\"nanos\":500000000,\"secs\":0},\"enemies\":[],\"last_spawn\":null,\"moveamt\":1.0,\"player\":0,\"scorer\":\"2764eff0-4173-44c4-9e54-9bbfb6721e60\",\"uuid\":\"70e7b846-5f11-44bf-a742-6b32ab670b15\"}}],\"graphics\":true}")).await;
+    //     engine::state::Engine::new(true, EventLoopBuilder::<()>::with_user_event().build()).await;
+    //
+    // let ship = e.add_object(gameobject::make_base_game_object(String::from("ship")));
+    // let scorer = Score::new();
+    // let scorer_link = e.add_static_linked(scorer.clone());
+    //
+    // // println!("{}", scorer_link.id.unwrap() == scorer_link.clone().id.unwrap());
+    //
+    // gameobject::add_component(ship, CharacterController2D::new(Some(Bounds2D::new(2.7, 2.0))));
+    // gameobject::add_component(ship, RenderComponent::new(Primitives::Triangle(0.1, [0.0, 1.0, 0.0])));
+    // gameobject::add_collider(ship, Arc::new(Mutex::new(CubeCollider::new(0.1))));
+    // gameobject::add_component(ship, BulletRenderer::new());
+    // gameobject::add_component(ship, ShootComponent::new(scorer_link.clone()));
+    //
+    // e.add_static(Spawner::new(ship, scorer_link));
+
+    let (mut e, eventloop) =
+        engine::state::Engine::import_from_json(String::from("{\"objects\":[{\"components\":[{\"id\":\"Transform\",\"data\":{\"pos\":[0.0,0.0,0.0],\"rot\":[0.0,0.0,0.0],\"state\":{\"_state\":null},\"uuid\":\"cd1961ab-38ba-4225-9cc6-f28747de0b7d\"}},{\"id\":\"CharacterController2D\",\"data\":{\"bounds\":{\"limits\":{\"x\":{\"x\":2.700000047683716},\"y\":{\"y\":2.0}}},\"moveamt\":0.009999999776482582,\"rotamt\":2.0,\"state\":{\"_state\":null},\"uuid\":\"99081038-f993-4231-bd17-8c2d5bbe8fdb\"}},{\"id\":\"RenderComponent\",\"data\":{\"name\":\"RenderComponent\",\"obj\":{\"Triangle\":[0.10000000149011612,[0.0,1.0,0.0]]},\"state\":{\"_state\":null},\"uuid\":\"eb875e37-31f7-4ec2-a76b-00c9c5e21d26\"}},{\"id\":\"BulletRenderer\",\"data\":{\"state\":{\"_state\":null},\"thickness\":0.009999999776482582,\"timeout_end\":null,\"to_set_thickness\":0.009999999776482582,\"uuid\":\"b1bb99b0-43b9-4fa0-9034-4a92a5eea954\"}},{\"id\":\"ShootComponent\",\"data\":{\"cooldown\":{\"nanos\":500000000,\"secs\":0},\"last_pressed\":null,\"scorer\":\"1d673e60-450c-4e0e-b928-10a5bdcfbf84\",\"state\":{\"_state\":null},\"uuid\":\"288d8d83-dd1b-4108-9b29-e9ecf915b791\"}}],\"colliders\":[{\"collider\":{\"CubeCollider\":{\"side_length\":0.1}}}],\"parent\":null,\"children\":[],\"id\":0,\"name\":\"ship\",\"active\":true}],\"static_components\":[{\"id\":\"Score\",\"data\":{\"over\":false,\"score\":0,\"uuid\":\"1d673e60-450c-4e0e-b928-10a5bdcfbf84\"}},{\"id\":\"Spawner\",\"data\":{\"cooldown\":{\"nanos\":500000000,\"secs\":0},\"enemies\":[],\"last_spawn\":null,\"moveamt\":1.0,\"player\":0,\"scorer\":\"1d673e60-450c-4e0e-b928-10a5bdcfbf84\",\"uuid\":\"d9ff7612-8330-46e8-aeb3-3ddf4454c452\"}}],\"graphics\":true}")).await;
 
     // e.add_object(make_base_game_object("ok".to_owned()));
 
     let e = Arc::new(Mutex::new(e));
 
-    println!("{:?}", e.lock().unwrap().export_raw());
+    // println!("{:?}", e.lock().unwrap().export_raw());
 
     engine::state::Engine::run(e, eventloop);
 }

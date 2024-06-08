@@ -9,7 +9,7 @@ use super::state::Engine;
 
 use std::hash::{Hash, Hasher};
 
-pub trait StaticComponent: Send + Sync + Downcast + StaticComponentSaveLoad
+pub trait StaticComponent: Send + Sync + Downcast + StaticComponentSaveLoad + Debug
 where Self: 'static {
     fn tick(&mut self, engine: &mut Engine);
     fn name(&mut self) -> String;

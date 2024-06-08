@@ -2,10 +2,7 @@ use downcast_rs::{impl_downcast, Downcast};
 pub use uuid::Uuid;
 use crate::engine::static_component::Container;
 use std::sync::{Arc, Mutex};
-// use uuid::Uuid;
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
-// use downcast_rs::{impl_downcast, Downcast};
-// use crate::engine::static_component::Container;
 use crate::engine::component::ComponentState;
 use winit::event_loop::{EventLoopBuilder, EventLoop};
 use std::sync::{RwLock};
@@ -25,19 +22,39 @@ use std::any::Any;
 use std::time::Duration;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::fmt::Debug;
-// use std::sync::{Arc, Mutex};
 use std::hash::{Hash, Hasher};
-
+use log::{info, warn, error};
 
 // Wrapper struct for Arc<Mutex<dyn StaticComponent>>
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct StaticComponentKey {
+    pub name: String,
     pub inner: Arc<Mutex<dyn StaticComponent>>,
 }
 
 impl PartialEq for StaticComponentKey {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.inner, &other.inner)
+        let self_val = {
+            info!("Locking self ({})...", self.name);
+
+            let self_lock = self.inner.lock().unwrap();
+
+            info!("Locked self ({})", self.name);
+
+            format!("{:?}", &*self_lock)
+        };
+
+        let other_val = {
+            info!("Locking other ({})...", other.name);
+
+            let other_lock = other.inner.lock().unwrap();
+
+            info!("Locked other ({})", other.name);
+
+            format!("{:?}", &*other_lock)
+        };
+
+        self_val == other_val
     }
 }
 
@@ -45,24 +62,37 @@ impl Eq for StaticComponentKey {}
 
 impl Hash for StaticComponentKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let ptr: *const _ = Arc::as_ptr(&self.inner);
-        ptr.hash(state);
+        let val = {
+            info!("Locking static component: {}", self.name);
+
+            let lock = self.inner.lock().unwrap();
+
+            info!("Locked static component: {}", self.name);
+
+            format!("{:?}", &*lock)
+        };
+
+        info!("Hashing {}", self.name);
+
+        val.hash(state);
+
+        info!("Done hashing {}", self.name);
     }
 }
 
 impl StaticComponentKey {
-    pub fn new(component: Arc<Mutex<dyn StaticComponent>>) -> Self {
-        Self { inner: component }
+    pub fn new(component: Arc<Mutex<dyn StaticComponent>>, name: String) -> Self {
+        Self { name, inner: component }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Link<T> {
+pub struct Link<T: ?Sized> {
     pub id: Option<Uuid>,
     pub data: Arc<Mutex<T>>,
 }
 
-impl<T: Default + Clone + Send + Sync + 'static> Default for Link<T> {
+impl<T: Default + Clone + Send + Sync + ?Sized> Default for Link<T> {
     fn default() -> Self {
         Self {
             id: Some(Uuid::new_v4()),
@@ -71,7 +101,7 @@ impl<T: Default + Clone + Send + Sync + 'static> Default for Link<T> {
     }
 }
 
-impl<T: Clone + Send + Sync + 'static> Link<T> {
+impl<T: Clone + Send + Sync + ?Sized + 'static + StaticComponent> Link<T> {
     pub fn new(data: impl Into<Arc<Mutex<T>>>) -> Self {
         let data = data.into();
         let id = Uuid::new_v4();
@@ -86,10 +116,14 @@ impl<T: Clone + Send + Sync + 'static> Link<T> {
             data: Arc::clone(&self.data),
         }
     }
+
+    pub fn get_data(&mut self) -> Arc<Mutex<T>> {
+        self.data.clone()
+    }
 }
 
 // Serialization and deserialization for Link
-impl<T: Serialize + Clone + Debug + Send + Sync + 'static> Serialize for Link<T> {
+impl<T: Serialize + Clone + Debug + Send + Sync + ?Sized> Serialize for Link<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -98,14 +132,14 @@ impl<T: Serialize + Clone + Debug + Send + Sync + 'static> Serialize for Link<T>
     }
 }
 
-impl<'de, T: Deserialize<'de> + Clone + Debug + Default + Send + Sync + 'static> Deserialize<'de> for Link<T> {
+impl<'de, T: Deserialize<'de> + Clone + Debug + Default + Send + Sync + ?Sized + 'static + StaticComponent> Deserialize<'de> for Link<T> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         let id_str = String::deserialize(deserializer)?;
         let id = Uuid::parse_str(&id_str).map_err(serde::de::Error::custom)?;
-        if let Some(link) = get_link::<T>(Some(id)) {
+        if let Some(link) = get_link::<T>(id) {
             Ok(link)
         } else {
             let new_link = Link::default();
@@ -116,15 +150,15 @@ impl<'de, T: Deserialize<'de> + Clone + Debug + Default + Send + Sync + 'static>
 }
 
 // Define a trait for serialization and deserialization
-pub(crate) trait ComponentSaveLoad: Send + Sync + Downcast + Any {
+pub(crate) trait ComponentSaveLoad: Send + Sync + Downcast + std::any::Any {
     fn to_save_data(&self) -> Value;
     fn from_save_data(data: Value) -> Arc<Mutex<ComponentWrapper>>
     where
         Self: Sized;
 }
 
-pub(crate) trait StaticComponentSaveLoad: Send + Sync + Downcast + Any {
-    fn to_save_data(&self) -> Value;
+pub(crate) trait StaticComponentSaveLoad: Send + Sync + Downcast + std::any::Any {
+    fn to_save_data(&mut self) -> Value;
     fn from_save_data(data: Value) -> Container
     where
         Self: Sized;
@@ -134,24 +168,46 @@ impl_downcast!(ComponentSaveLoad);
 impl_downcast!(StaticComponentSaveLoad);
 
 lazy_static! {
-    static ref COMPONENT_REGISTRY: RwLock<HashMap<String, Box<dyn Fn(Value) -> Arc<Mutex<ComponentWrapper>> + Send + Sync>>> = RwLock::new(HashMap::new());
+    static ref COMPONENT_REGISTRY: std::sync::RwLock<std::collections::HashMap<String, Box<dyn Fn(serde_json::Value) -> std::sync::Arc<std::sync::Mutex<ComponentWrapper>> + Send + Sync>>> = std::sync::RwLock::new(std::collections::HashMap::new());
     static ref STATIC_COMPONENT_REGISTRY: RwLock<HashMap<String, Box<dyn Fn(Value) -> Arc<Mutex<dyn StaticComponent>> + Send + Sync>>> = RwLock::new(HashMap::new());
-    static ref LINK_REGISTRY: RwLock<HashMap<Uuid, Box<dyn Any + Send + Sync>>> = RwLock::new(HashMap::new());
-    pub static ref UUID_REGISTRY: RwLock<HashMap<StaticComponentKey, Uuid>> = RwLock::new(HashMap::new());
+    static ref LINK_REGISTRY: RwLock<HashMap<Uuid, Box<dyn std::any::Any + Send + Sync>>> = RwLock::new(HashMap::new());
+    pub static ref UUID_REGISTRY: RwLock<HashMap<String, Uuid>> = RwLock::new(HashMap::new());
 }
 
-pub fn register_link<T: 'static + Send + Sync>(link: Link<T>) {
+fn print_type_of<T>(_: &T) {
+    println!("{}", std::any::type_name::<T>())
+}
+
+fn print_type_of_t<T>() {
+    println!("{}", std::any::type_name::<T>())
+}
+
+pub fn register_link<T: 'static + Send + Sync + ?Sized + Clone + StaticComponent>(mut link: Link<T>) {
     let mut registry = LINK_REGISTRY.write().unwrap();
-    registry.insert(link.id.unwrap(), Box::new(link.data) as Box<dyn Any + Send + Sync>);
+    registry.insert(link.id.unwrap(), Box::new(link.data.clone()) as Box<dyn std::any::Any + Send + Sync>);
+
+    let value = link.get_data();
+
+    let mut uuids = UUID_REGISTRY.write().unwrap();
+    let name = link.data.lock().unwrap().name();
+    info!("Registering link with name: {}", name);
+    uuids.insert(name.clone(), link.id.unwrap());
+    info!("Link {} registered successfully. ({})", name, link.id.unwrap());
 }
 
-pub fn get_link<T: 'static + Send + Sync>(id: Option<Uuid>) -> Option<Link<T>> {
-    println!("ok {:?}", id);
-    if let Some(id) = id {
+pub fn get_link<T: 'static + Send + Sync + ?Sized>(id: Uuid) -> Option<Link<T>> {
     let registry = LINK_REGISTRY.read().unwrap();
-        return registry.get(&id).and_then(|data| data.downcast_ref::<Arc<Mutex<T>>>().cloned().map(|data| Link { id: Some(id), data }));
+    if let Some(data) = registry.get(&id) {
+        if let Some(link) = data.downcast_ref::<Arc<Mutex<T>>>().cloned() {
+            info!("Link found for UUID: {}", id);
+            Some(Link { id: Some(id), data: link })
+        } else {
+            error!("Failed to downcast link for UUID: {}", id);
+            None
+        }
     } else {
-        return None;
+        warn!("No link found for UUID: {}", id);
+        None
     }
 }
 
@@ -169,7 +225,7 @@ macro_rules! impl_save_load_default {
             fn to_save_data(&self) -> serde_json::Value {
                 let mut uuid_registry = $crate::engine::save::UUID_REGISTRY.write().unwrap();
                 let save_data = $save_struct {
-                    uuid: None,
+                    uuid: Some(Uuid::new_v4()),
                     $( $field: self.$field.clone() ),*,
                     $( $link_field: {
                         let link = &self.$link_field;
@@ -186,20 +242,20 @@ macro_rules! impl_save_load_default {
                 serde_json::to_value(save_data).unwrap()
             }
 
-            fn from_save_data(data: serde_json::Value) -> Arc<Mutex<ComponentWrapper>> {
+            fn from_save_data(data: serde_json::Value) -> std::sync::Arc<std::sync::Mutex<ComponentWrapper>> {
                 let save_data: $save_struct = serde_json::from_value(data).unwrap();
-                let component = Arc::new(Mutex::new(Self {
+                let component = std::sync::Arc::new(std::sync::Mutex::new(Self {
                     $( $field: save_data.$field ),*,
-                    $( $link_field: $crate::engine::save::get_link(Some(save_data.$link_field.id.unwrap())).unwrap_or_else(|| {
-                        let new_link = $crate::engine::save::Link::new(Arc::new(Mutex::new(<$link_field_type>::default())));
+                    $( $link_field: $crate::engine::save::get_link(save_data.$link_field.id.unwrap()).unwrap_or_else(|| {
+                        let new_link = $crate::engine::save::Link::new(<$link_field_type>::default());
                         $crate::engine::save::register_link(new_link.clone());
                         new_link
                     })),*
                 }));
 
-                let ticker = Arc::new(Mutex::new(TickVariant::Default(component.clone() as Arc<Mutex<dyn $crate::engine::component::TickBehavior>>)));
+                let ticker = std::sync::Arc::new(std::sync::Mutex::new(TickVariant::Default(component.clone() as std::sync::Arc<std::sync::Mutex<dyn $crate::engine::component::TickBehavior>>)));
 
-                Arc::new(Mutex::new($crate::engine::component::ComponentWrapper::new(component as Arc<Mutex<dyn $crate::engine::component::ComponentTrait>>, ticker)))
+                std::sync::Arc::new(std::sync::Mutex::new($crate::engine::component::ComponentWrapper::new(component as std::sync::Arc<std::sync::Mutex<dyn $crate::engine::component::ComponentTrait>>, ticker)))
             }
         }
         $crate::engine::save::register_component::<$comp_type>(stringify!($comp_type));
@@ -220,16 +276,20 @@ macro_rules! impl_save_load_input {
             fn to_save_data(&self) -> serde_json::Value {
                 let mut uuid_registry = $crate::engine::save::UUID_REGISTRY.write().unwrap();
                 let save_data = $save_struct {
-                    uuid: None,
+                    uuid: Some(Uuid::new_v4()),
                     $( $field: self.$field.clone() ),*,
                     $( $link_field: {
                         let link = &self.$link_field;
-                        let arc_mutex = StaticComponentKey::new(link.data.clone() as Arc<Mutex<dyn StaticComponent>>);
+                        let name = link.data.lock().unwrap().name();
+                        info!("Processing link field with name: {}", name.clone());
+                        let arc_mutex = name.clone();
                         if let Some(existing_uuid) = uuid_registry.get(&arc_mutex) {
+                            info!("Existing UUID found for link field: {}, ({})", name, existing_uuid);
                             link.clone_with_uuid(*existing_uuid)
                         } else {
                             let new_uuid = Uuid::new_v4();
                             uuid_registry.insert(arc_mutex, new_uuid);
+                            info!("New UUID generated for link field.");
                             link.clone_with_uuid(new_uuid)
                         }
                     }),*
@@ -237,20 +297,20 @@ macro_rules! impl_save_load_input {
                 serde_json::to_value(save_data).unwrap()
             }
 
-            fn from_save_data(data: serde_json::Value) -> Arc<Mutex<ComponentWrapper>> {
+            fn from_save_data(data: serde_json::Value) -> std::sync::Arc<std::sync::Mutex<ComponentWrapper>> {
                 let save_data: $save_struct = serde_json::from_value(data).unwrap();
-                let component = Arc::new(Mutex::new(Self {
+                let component = std::sync::Arc::new(std::sync::Mutex::new(Self {
                     $( $field: save_data.$field ),*,
-                    $( $link_field: $crate::engine::save::get_link(Some(save_data.$link_field.id.unwrap())).unwrap_or_else(|| {
+                    $( $link_field: $crate::engine::save::get_link(save_data.$link_field.id.unwrap()).unwrap_or_else(|| {
                         let new_link = $crate::engine::save::Link::new(Arc::new(Mutex::new(<$link_field_type>::default())));
                         $crate::engine::save::register_link(new_link.clone());
                         new_link
                     })),*
                 }));
 
-                let ticker = Arc::new(Mutex::new(TickVariant::Input(component.clone() as Arc<Mutex<dyn $crate::engine::component::InputTickBehavior>>)));
+                let ticker = std::sync::Arc::new(std::sync::Mutex::new(TickVariant::Input(component.clone() as std::sync::Arc<std::sync::Mutex<dyn $crate::engine::component::InputTickBehavior>>)));
 
-                Arc::new(Mutex::new($crate::engine::component::ComponentWrapper::new(component as Arc<Mutex<dyn $crate::engine::component::ComponentTrait>>, ticker)))
+                std::sync::Arc::new(std::sync::Mutex::new($crate::engine::component::ComponentWrapper::new(component as std::sync::Arc<std::sync::Mutex<dyn $crate::engine::component::ComponentTrait>>, ticker)))
             }
         }
         $crate::engine::save::register_component::<$comp_type>(stringify!($comp_type));
@@ -271,10 +331,11 @@ macro_rules! impl_save_load_render {
             fn to_save_data(&self) -> serde_json::Value {
                 let mut uuid_registry = $crate::engine::save::UUID_REGISTRY.write().unwrap();
                 let save_data = $save_struct {
-                    uuid: None,
+                    uuid: Some(Uuid::new_v4()),
                     $( $field: self.$field.clone() ),*,
                     $( $link_field: {
                         let link = &self.$link_field;
+
                         let arc_mutex = StaticComponentKey::new(link.data.clone() as Arc<Mutex<dyn StaticComponent>>);
                         if let Some(existing_uuid) = uuid_registry.get(&arc_mutex) {
                             link.clone_with_uuid(*existing_uuid)
@@ -288,27 +349,27 @@ macro_rules! impl_save_load_render {
                 serde_json::to_value(save_data).unwrap()
             }
 
-            fn from_save_data(data: serde_json::Value) -> Arc<Mutex<ComponentWrapper>> {
+            fn from_save_data(data: serde_json::Value) -> std::sync::Arc<std::sync::Mutex<ComponentWrapper>> {
                 let save_data: $save_struct = serde_json::from_value(data).unwrap();
-                let component = Arc::new(Mutex::new(Self {
+                let component = std::sync::Arc::new(std::sync::Mutex::new(Self {
                     $( $field: save_data.$field ),*,
                     $( $link_field: $crate::engine::save::get_link(save_data.$link_field.id.unwrap()).unwrap_or_else(|| {
-                        let new_link = $crate::engine::save::Link::new(Arc::new(Mutex::new(<$link_field_type>::default())));
+                        let new_link = $crate::engine::save::Link::new(<$link_field_type>::default());
                         $crate::engine::save::register_link(new_link.clone());
                         new_link
                     })),*
                 }));
 
-                let ticker = Arc::new(Mutex::new(TickVariant::Render(component.clone() as Arc<Mutex<dyn $crate::engine::component::RenderTickBehavior>>)));
+                let ticker = std::sync::Arc::new(std::sync::Mutex::new(TickVariant::Render(component.clone() as std::sync::Arc<std::sync::Mutex<dyn $crate::engine::component::RenderTickBehavior>>)));
 
-                Arc::new(Mutex::new($crate::engine::component::ComponentWrapper::new(component as Arc<Mutex<dyn $crate::engine::component::ComponentTrait>>, ticker)))
+                std::sync::Arc::new(std::sync::Mutex::new($crate::engine::component::ComponentWrapper::new(component as std::sync::Arc<std::sync::Mutex<dyn $crate::engine::component::ComponentTrait>>, ticker)))
             }
         }
         $crate::engine::save::register_component::<$comp_type>(stringify!($comp_type));
     };
 }
 
-    #[macro_export]
+#[macro_export]
 macro_rules! impl_static_save_load {
     ($comp_type:ty, $save_struct:ident, { $( $field:ident : $field_type:ty ),* }, { $( $link_field:ident : $link_field_type:ty ),* }) => {
         #[derive(Serialize, Deserialize, Debug, Default)]
@@ -319,26 +380,29 @@ macro_rules! impl_static_save_load {
         }
 
         impl $crate::engine::save::StaticComponentSaveLoad for $comp_type {
-            fn to_save_data(&self) -> serde_json::Value {
+            fn to_save_data(&mut self) -> serde_json::Value {
                 let mut uuid_registry = $crate::engine::save::UUID_REGISTRY.write().unwrap();
-                let arc_mutex = StaticComponentKey::new(Arc::new(Mutex::new(self.clone())));
-
-                {
-                    println!("{}, {:?}", stringify!($save_struct), uuid_registry.contains_key(&arc_mutex.clone()));
-                }
-
+                let name = self.name();
+                let arc_mutex = name.clone();
+                // arc_mutex.inner.lock().unwrap();
+                info!("Saving static component with name: {}", name);
+                println!("{:?}", uuid_registry);   
                 let uuid = uuid_registry.entry(arc_mutex.clone()).or_insert_with(Uuid::new_v4);
+                // let uuid = Uuid::new_v4();
+                info!("UUID for static component {}: {}", name, uuid);
                 let save_data = $save_struct {
                     uuid: Some(*uuid),
                     $( $field: self.$field.clone() ),*,
                     $( $link_field: {
                         let link = &self.$link_field;
-                        let arc_mutex = StaticComponentKey::new(link.data.clone() as Arc<Mutex<dyn StaticComponent>>);
-                        if let Some(existing_uuid) = uuid_registry.get(&arc_mutex) {
+                        info!("Processing link field for static component {}.", name);
+                        let arc_mutex = &self.$link_field.data.lock().unwrap().name() as &str;
+                        if let Some(existing_uuid) = uuid_registry.get(arc_mutex) {
+                            info!("Found UUID for link field on {}: {}", name, existing_uuid);
                             link.clone_with_uuid(*existing_uuid)
                         } else {
                             let new_uuid = Uuid::new_v4();
-                            uuid_registry.insert(arc_mutex, new_uuid);
+                            uuid_registry.insert(arc_mutex.to_string(), new_uuid);
                             link.clone_with_uuid(new_uuid)
                         }
                     }),*
@@ -350,7 +414,7 @@ macro_rules! impl_static_save_load {
                 let save_data: $save_struct = serde_json::from_value(data).unwrap();
                 let component = Arc::new(Mutex::new(Self {
                     $( $field: save_data.$field ),*,
-                    $( $link_field: $crate::engine::save::get_link(save_data.$link_field.id).unwrap_or_else(|| {
+                    $( $link_field: $crate::engine::save::get_link(save_data.$link_field.id.unwrap()).unwrap_or_else(|| {
                         let new_link = $crate::engine::save::Link::new(Arc::new(Mutex::new(<$link_field_type>::default())));
                         $crate::engine::save::register_link(new_link.clone());
                         new_link
@@ -422,6 +486,7 @@ pub fn register_component<T: ComponentSaveLoad + 'static>(name: &str) {
             T::from_save_data(data)
         }) as Box<dyn Fn(Value) -> Arc<Mutex<ComponentWrapper>> + Send + Sync>,
     );
+    info!("Component registered with name: {}", name);
 }
 
 pub fn register_static_component<T: StaticComponentSaveLoad + 'static>(name: &str) {
@@ -432,6 +497,7 @@ pub fn register_static_component<T: StaticComponentSaveLoad + 'static>(name: &st
             T::from_save_data(data).internal
         }) as Box<dyn Fn(Value) -> Arc<Mutex<dyn StaticComponent>> + Send + Sync>,
     );
+    info!("Static component registered with name: {}", name);
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -443,6 +509,7 @@ pub struct EngineSaveData {
 
 impl EngineSaveData {
     pub fn from_engine(e: &mut Engine) -> EngineSaveData {
+        info!("Converting engine state to save data.");
         Self {
             objects: e.state.objects().iter_mut().map(|obj| {
                 GameObjectSaveData::from_game_object(&mut GameObject::find_by_id(*obj).expect("cannot find associated object").lock().unwrap())
@@ -460,6 +527,7 @@ impl EngineSaveData {
     }
 
     pub async fn to_engine(&mut self) -> (Engine, EventLoop<()>) {
+        info!("Restoring engine state from save data.");
         let event_loop = EventLoopBuilder::<()>::with_user_event().build();
         let mut engine = Engine::new(self.graphics, event_loop).await;
     
@@ -475,6 +543,7 @@ impl EngineSaveData {
     }
 
     pub async fn to_engine_from_data(data: String) -> (Engine, EventLoop<()>) {
+        info!("Loading engine state from JSON data. (save.rs)");
         let save = serde_json::from_str(&data).unwrap();
         let mut e = serde_json::from_value::<Self>(save).unwrap();
         Self::to_engine(&mut e).await
@@ -494,6 +563,7 @@ pub struct GameObjectSaveData {
 
 impl GameObjectSaveData {
     pub fn from_game_object(obj: &GameObject) -> Self {
+        info!("Converting game object to save data. Object ID: {}", obj.id);
         GameObjectSaveData {
             components: obj.components.iter().map(|c| ComponentSaveData::from_component(c.clone())).collect(),
             colliders: obj.colliders.iter().map(|c| ColliderSaveData::from_collider(c.clone())).collect(),
@@ -506,6 +576,7 @@ impl GameObjectSaveData {
     }
 
     pub fn to_game_object(&self) -> Arc<Mutex<GameObject>> {
+        info!("Restoring game object from save data. Object ID: {}", self.id);
         let obj = GameObject::new(self.name.clone(), vec![], GameObjectState::new(self.active, self.parent, self.children.clone()));
 
         for comp in &self.components {
@@ -531,6 +602,7 @@ impl ComponentSaveData {
         let mut lock = match comp.try_lock() {
             Ok(lock) => lock,
             Err(_) => {
+                error!("Failed to acquire lock for component during save.");
                 panic!("couldn't get lock");
             }
         };
@@ -539,20 +611,21 @@ impl ComponentSaveData {
 
         let (name, data) = {
             let name = comp_lock.name().to_string();
-            
             let data = ComponentTrait::to_save_data(comp_lock);
-
             (name, data)
         };
 
+        info!("Component data saved. Component name: {}", name);
         Self { id: name, data }
     }
 
     pub fn to_component(&self) -> Arc<Mutex<ComponentWrapper>> {
         let registry = COMPONENT_REGISTRY.read().unwrap();
         if let Some(constructor) = registry.get(&self.id) {
+            info!("Restoring component from save data. Component name: {}", self.id);
             constructor(self.data.clone())
         } else {
+            error!("Unknown component type: {}", self.id);
             panic!("Unknown component type: {}", self.id);
         }
     }
@@ -568,16 +641,17 @@ impl StaticComponentSaveData {
     pub fn from_static_component(comp: Arc<Mutex<dyn StaticComponent>>) -> Self {
         let mut lock = comp.lock().unwrap();
         let data = lock.to_save_data();
-
+        info!("Static component data saved. Component name: {}", lock.name());
         Self { id: lock.name(), data }
     }
 
     pub fn to_static_component(&self) -> Arc<Mutex<dyn StaticComponent>> {
         let registry = STATIC_COMPONENT_REGISTRY.read().unwrap();
-        println!("{:?}", registry.iter().map(|a| {a.0}).collect::<Vec<_>>());
         if let Some(constructor) = registry.get(&self.id) {
+            info!("Restoring static component from save data. Component name: {}", self.id);
             constructor(self.data.clone())
         } else {
+            error!("Unknown static component type: {}", self.id);
             panic!("Unknown static component type: {}", self.id);
         }
     }
@@ -608,9 +682,11 @@ impl ColliderSaveData {
         } else if let Some(octagon) = lock.downcast_ref::<OctagonCollider>() {
             ColliderType::OctagonCollider { size: octagon.size }
         } else {
+            error!("Unknown collider type encountered during save.");
             panic!("Unknown collider type");
         };
         
+        info!("Collider data saved. Collider type: {:?}", collider_type);
         ColliderSaveData { collider: collider_type }
     }
 

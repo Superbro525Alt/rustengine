@@ -25,6 +25,8 @@ use serde_json::Value;
 
 use crate::engine::physics::PhysicsEngine;
 
+use log::{info, warn, error};
+
 use super::save::Link;
 use super::save::{EngineSaveData, StaticComponent};
 // use super::static_component::StaticComponent;
@@ -247,6 +249,7 @@ impl Engine {
     }
 
     pub async fn import_from_json(data: String) -> (Self, EventLoop<()>) {
+        info!("Loading json... (state.rs)");
         EngineSaveData::to_engine_from_data(data).await
     }
 
