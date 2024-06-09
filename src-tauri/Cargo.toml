@@ -1,0 +1,60 @@
+[package]
+name = "app"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+license = ""
+repository = ""
+default-run = "app"
+edition = "2021"
+rust-version = "1.60"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+tauri-build = { version = "1.5.2", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "1.6.5", features = [] }
+lazy_static = "1.4"
+downcast-rs = "1.2.1"
+cfg-if = "1"
+winit = "0.28"
+env_logger = "0.10"
+log = "0.4"
+wgpu = "0.18"
+pollster = "0.3"
+bytemuck = "1.15.0"
+bytemuck_derive = "1.6.0"
+rand = "0.8.5"
+cgmath = "0.18.0"
+nalgebra = "0.32.5"
+rusttype = "0.9.3"
+opencv = "0.91.3"
+image = "0.25.1"
+glyph_brush = "0.7.8"
+wgpu_glyph = "0.22.0"
+glyph_brush_layout = "0.2.3"
+rocket = "0.5.0"
+egui = "0.27.0"
+eframe = { version = "0.27.0", default-features = false, features = [
+    "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
+    "default_fonts", # Embed the default egui fonts.
+    "glow",          # Use the glow rendering backend. Alternative: "wgpu".
+    "persistence",   # Enable restoring app state when restarting the app.
+] }
+serial_test = "3.1.1"
+tokio = "1.37.0"
+smallvec = "1.13.2"
+syn = {version="2.0.66", features= ["full"] }
+quote = "1.0.36"
+khronos-egl = "6.0.0"
+uuid = { version = "1.1", features = ["serde", "v4"] }
+
+[features]
+# this feature is used for production builds or when `devPath` points to the filesystem and the built-in dev server is disabled.
+# If you use cargo directly instead of tauri's cli you can use this feature flag to switch between tauri's `dev` and `build` modes.
+# DO NOT REMOVE!!
+custom-protocol = [ "tauri/custom-protocol" ]
