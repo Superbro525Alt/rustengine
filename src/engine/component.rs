@@ -46,7 +46,7 @@ where
 {
     fn name(&self) -> &str;
     fn state(&mut self) -> &mut ComponentState;
-    fn to_save_data(&self) -> Value {
+    fn to_save_data(&mut self) -> Value {
         ComponentSaveLoad::to_save_data(self)
     }
     // fn tick_type(&mut self) -> &mut TickVariant;

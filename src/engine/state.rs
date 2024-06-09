@@ -142,7 +142,7 @@ pub struct Engine {
     mouse_buttons_pressed: Vec<winit::event::MouseButton>,
     mouse_position: (f64, f64),
     pub physics_engine: PhysicsEngine,
-    pub paused: bool
+    pub paused: bool,
 }
 
 unsafe impl Send for Engine {}

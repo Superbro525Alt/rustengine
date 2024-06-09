@@ -21,12 +21,12 @@ use rand::Rng;
 use winit::event_loop::EventLoopBuilder;
 use eframe;
 use std::env;
-use log;
+use log::{info, warn};
 
 use uuid::Uuid;
 use std::collections::HashMap;
 use crate::save::register_link;
-use crate::log::info;
+// use crate::log::info;
 // pub use engine::save::{get_link};
 
 fn main() {
@@ -48,7 +48,7 @@ impl Score {
 
 impl StaticComponent for Score {
     fn tick(&mut self, engine: &mut engine::state::Engine) {
-        println!("static score: {}", self.score);
+        // println!("static score: {}", self.score);
         if !self.over {
             engine.add_ui_element(engine::ui::UIElement::Text(engine::ui::text::Text { content: String::from("Score: ".to_owned() + &self.score.to_string().to_owned()), position: cgmath::Point2 { x: -335.0, y: -275.0 }, color: [0.0, 1.0, 0.0, 1.0], origin: engine::ui::text::TextOrigin::Center }));
         }
@@ -124,7 +124,7 @@ impl Spawner {
 
 impl StaticComponent for Spawner {
     fn tick(&mut self, e: &mut engine::state::Engine) {
-        { println!("spawner score: {}", self.scorer.data.lock().unwrap().score); };
+        // { println!("spawner score: {}", self.scorer.get_data().lock().unwrap().score); };
         if let Some(last_spawn) = self.last_spawn {
             // println!("{:?}", OxidizedInstant::now());
             if OxidizedInstant::now() >= last_spawn + self.cooldown {
@@ -171,7 +171,7 @@ impl StaticComponent for Spawner {
                 let distance = (direction[0].powi(2) + direction[1].powi(2) + direction[2].powi(2)).sqrt();
 
                 if distance < 0.1 {
-                    self.scorer.data.lock().unwrap().over = true;
+                    self.scorer.get_data().lock().unwrap().over = true;
                     return;
                 }
 
@@ -230,7 +230,7 @@ impl ComponentTrait for ShootComponent {
 
 impl InputTickBehavior for ShootComponent {
     fn tick_with_input(&mut self, input: &engine::component::InputData, obj: &mut GameObject, dt: Duration) {
-        { println!("shoot score: {}", self.scorer.data.lock().unwrap().score); };
+        // { println!("shoot score: {}", self.scorer.get_data().lock().unwrap().score); };
 
         if let Some(last_pressed) = &self.last_pressed {
             if OxidizedInstant::now() >= *last_pressed + self.cooldown {
@@ -276,7 +276,7 @@ impl InputTickBehavior for ShootComponent {
 
                         for enemy in result.underlying.iter_mut() {
                             enemy.lock().unwrap().destroy();
-                            self.scorer.data.lock().unwrap().score += 1;
+                            self.scorer.get_data().lock().unwrap().score += 1;
                         }
                     };
                 },
@@ -362,8 +362,6 @@ impl RenderTickBehavior for BulletRenderer {
 async fn run() {
     save::init();
 
-    info!("ok");
-
     impl_save_load!(ShootComponent, ShootComponentSaveData, input, 
         {
             state: ComponentState, 
@@ -430,7 +428,7 @@ async fn run() {
 
     let e = Arc::new(Mutex::new(e));
 
-    // println!("{:?}", e.lock().unwrap().export_raw());
+    println!("{:?}", e.lock().unwrap().export_raw());
 
     engine::state::Engine::run(e, eventloop);
 }
