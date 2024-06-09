@@ -260,6 +260,7 @@ dependencies = [
  "uuid",
  "wgpu",
  "wgpu_glyph",
+ "winapi",
  "winit 0.28.7",
 ]
 
