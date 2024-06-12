@@ -1,6 +1,7 @@
 use downcast_rs::{impl_downcast, Downcast};
 use rocket::form::validate::Len;
 pub use uuid::Uuid;
+use winit::platform::x11::EventLoopBuilderExtX11;
 use crate::engine::static_component::Container;
 use std::sync::{Arc, Mutex};
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
@@ -592,10 +593,13 @@ impl EngineSaveData {
         serde_json::to_string(&save).unwrap()
     }
 
-    pub async fn to_engine(&mut self) -> (Engine, EventLoop<()>) {
+    pub async fn to_engine(&mut self, mut event_loop: Option<EventLoop<()>>) -> (Engine, EventLoop<()>) {
         info!("Restoring engine state from save data.");
-        let event_loop = EventLoopBuilder::<()>::with_user_event().build();
-        let mut engine = Engine::new(self.graphics, event_loop).await;
+        if event_loop.is_none() {
+            event_loop = Some(EventLoopBuilder::<()>::with_user_event().with_any_thread(true).build());
+        }
+
+        let mut engine = Engine::new(self.graphics, event_loop.unwrap()).await;
     
         for obj in self.objects.iter_mut() {
             engine.0.add_object(obj.to_game_object());
@@ -608,11 +612,11 @@ impl EngineSaveData {
         engine
     }
 
-    pub async fn to_engine_from_data(data: String) -> (Engine, EventLoop<()>) {
+    pub async fn to_engine_from_data(data: String, l: Option<EventLoop<()>>) -> (Engine, EventLoop<()>) {
         info!("Loading engine state from JSON data. (save.rs)");
         let save = serde_json::from_str(&data).unwrap();
         let mut e = serde_json::from_value::<Self>(save).unwrap();
-        Self::to_engine(&mut e).await
+        Self::to_engine(&mut e, l).await
     }
 }
 

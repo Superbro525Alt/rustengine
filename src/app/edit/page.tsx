@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation"; // For fetching URL parameters
 import {
   Card,
   CardContent,
@@ -13,123 +14,126 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ChevronRight, ChevronDown, Plus, Trash, Play, StopCircle, Square, Pause } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash, Play, Pause, Square } from "lucide-react";
 import { Command, CommandItem, CommandList, CommandInput, CommandGroup, CommandEmpty } from "@/components/ui/command";
 import { Dialog, DialogOverlay, DialogContent } from "@/components/ui/dialog";
-
-const initialHierarchy = [
-  {
-    id: 1,
-    name: "GameObject1",
-    expanded: true,
-    components: [
-      { id: 1, type: "Transform", properties: { Position: [0, 0, 0], Rotation: [0, 0, 0], Scale: [1, 1, 1] } },
-      { id: 2, type: "MeshRenderer", properties: { Material: "Default", Enabled: true } },
-    ],
-    children: [
-      {
-        id: 2,
-        name: "ChildObject1",
-        expanded: true,
-        components: [{ id: 3, type: "Transform", properties: { Position: [0, 0, 0], Rotation: [0, 0, 0], Scale: [1, 1, 1] } }],
-        children: [],
-      },
-    ],
-  },
-  {
-    id: 3,
-    name: "GameObject2",
-    expanded: true,
-    components: [
-      { id: 4, type: "Transform", properties: { Position: [0, 0, 0], Rotation: [0, 0, 0], Scale: [1, 1, 1] } },
-      { id: 5, type: "Light", properties: { Color: "#FFFFFF", Intensity: 1.0 } },
-    ],
-    children: [],
-  },
-];
+import { invoke } from '@tauri-apps/api/tauri';
+import { readTextFile } from '@tauri-apps/api/fs';
+import { v4 } from "uuid";
 
 const initialComponents = {
   Transform: [
-    { name: "Position", type: "Vector3" },
-    { name: "Rotation", type: "Vector3" },
-    { name: "Scale", type: "Vector3" },
+    { name: "pos", type: "Vector3" },
+    { name: "rot", type: "Vector3" },
   ],
-  MeshRenderer: [
-    { name: "Material", type: "String" },
-    { name: "Enabled", type: "Boolean" },
+  CharacterController2D: [
+    { name: "bounds", type: "Object" },
+    { name: "moveamt", type: "Float" },
+    { name: "rotamt", type: "Float" },
   ],
-  Light: [
-    { name: "Color", type: "Color" },
-    { name: "Intensity", type: "Float" },
-  ],
-};
-
-const initialStaticComponentsList = {
-  Physics: [
-    { name: "Mass", type: "Float" },
-    { name: "Drag", type: "Float" },
-    { name: "AngularDrag", type: "Float" },
-  ],
-  AudioSource: [
-    { name: "Clip", type: "String" },
-    { name: "Volume", type: "Float" },
-    { name: "Loop", type: "Boolean" },
+  RenderComponent: [
+    { name: "obj", type: "Object" },
   ],
 };
 
-const initialStaticComponents = [];
+const registerComponents = (data) => {
+  const components = { ...initialComponents };
+  const staticComponents = {};
+
+  data.objects.forEach((object) => {
+    object.components.forEach((component) => {
+      if (!components[component.id]) {
+        components[component.id] = Object.keys(component.data)
+          .filter((key) => key !== "state" && key !== "uuid")
+          .map((key) => ({
+            name: key,
+            type: Array.isArray(component.data[key]) && component.data[key].length === 3 ? "Vector3" : typeof component.data[key],
+          }));
+      }
+    });
+  });
+
+  data.static_components.forEach((component) => {
+    if (!staticComponents[component.id]) {
+      staticComponents[component.id] = Object.keys(component.data)
+        .filter((key) => key !== "state" && key !== "uuid")
+        .map((key) => ({
+          name: key,
+          type: Array.isArray(component.data[key]) && component.data[key].length === 3 ? "Vector3" : typeof component.data[key],
+        }));
+    }
+  });
+
+  return { components, staticComponents };
+};
 
 export default function Edit() {
-  const [hierarchy, setHierarchy] = useState(initialHierarchy);
+  const [hierarchy, setHierarchy] = useState([]);
   const [selectedObject, setSelectedObject] = useState(null);
-  const [components] = useState(initialComponents);
-  const [staticComponents, setStaticComponents] = useState(initialStaticComponents);
-  const [staticComponentsList] = useState(initialStaticComponentsList);
+  const [components, setComponents] = useState({});
+  const [staticComponents, setStaticComponents] = useState([]);
+  const [staticComponentsTypes, setStaticComponentsTypes] = useState({});
   const [selectedStaticComponent, setSelectedStaticComponent] = useState(null);
   const [showCommandMenu, setShowCommandMenu] = useState(false);
   const [commandMenuType, setCommandMenuType] = useState("normal"); // "normal" or "static"
   const commandMenuRef = useRef();
   const [forceRenderKey, setForceRenderKey] = useState(0); // New state to force re-render
 
+  const searchParams = useSearchParams();
+
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (commandMenuRef.current && !commandMenuRef.current.contains(event.target)) {
-        setShowCommandMenu(false);
+    const loadInitialData = async () => {
+      const path = searchParams.get('path');
+      if (path) {
+        try {
+          let data = await readTextFile(path);
+          data = data.replace(/\\/g, "");
+          const parsedData = JSON.parse(data);
+
+          const { components: registeredComponents, staticComponents: registeredStaticComponents } = registerComponents(parsedData);
+
+          setComponents({ ...registeredComponents });
+          setStaticComponentsTypes({ ...registeredStaticComponents });
+          setHierarchy(parsedData.objects);
+          setStaticComponents(parsedData.static_components);
+        } catch (error) {
+          console.error('Failed to load initial data:', error);
+        }
       }
     };
 
-    const handleEscapeKey = (event) => {
-      if (event.key === "Escape") {
-        setShowCommandMenu(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleEscapeKey);
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleEscapeKey);
-    };
-  }, []);
-
-  useEffect(() => {
-    setForceRenderKey(forceRenderKey + 1);
-  }, [selectedObject, selectedStaticComponent]);
+    loadInitialData();
+  }, [searchParams]);
 
   const toggleExpand = (object) => {
     object.expanded = !object.expanded;
     setHierarchy([...hierarchy]);
   };
 
+  const getNestedListLength = (list) => {
+    let totalLength = 0;
+
+    for (const element of list) {
+      if (Array.isArray(element)) {
+        totalLength += getNestedListLength(element);
+      } else {
+        totalLength++;
+      }
+    }
+
+    return totalLength;
+  };
+
   const addObject = (parent) => {
+    let id = getNestedListLength(hierarchy);
     const newObject = {
-      id: Date.now(),
+      id: id,
       name: `New GameObject`,
       expanded: true,
-      components: [{ id: Date.now(), type: "Transform", properties: { Position: [0, 0, 0], Rotation: [0, 0, 0], Scale: [1, 1, 1] } }],
+      components: [],
       children: [],
     };
+
     if (parent) {
       parent.children.push(newObject);
     } else {
@@ -152,9 +156,19 @@ export default function Edit() {
     }
   };
 
+  const deleteComponent = (object, component) => {
+    object.components = object.components.filter((comp) => comp.data.uuid !== component.data.uuid);
+    setHierarchy([...hierarchy]);
+  };
+
+  const deleteCollider = (object, collider) => {
+    object.colliders = object.colliders.filter((col) => col !== collider);
+    setHierarchy([...hierarchy]);
+  };
+
   const deleteStaticComponent = (component) => {
-    setStaticComponents(staticComponents.filter((comp) => comp.id !== component.id));
-    if (selectedStaticComponent && selectedStaticComponent.id === component.id) {
+    setStaticComponents(staticComponents.filter((comp) => comp.data.uuid !== component.data.uuid));
+    if (selectedStaticComponent && selectedStaticComponent.data.uuid === component.data.uuid) {
       setSelectedStaticComponent(null);
     }
   };
@@ -165,125 +179,400 @@ export default function Edit() {
   };
 
   const handleComponentPropertyChange = (component, property, value) => {
-    component.properties[property] = value;
+    component.data[property] = value;
     setHierarchy([...hierarchy]);
   };
 
   const handleStaticComponentPropertyChange = (component, property, value) => {
-    component.properties[property] = value;
+    component.data[property] = value;
     setStaticComponents([...staticComponents]);
   };
 
   const renderPropertyInput = (component, property, type) => {
-    switch (type) {
-      case "Vector3":
-        return (
-          <div className="flex space-x-2">
-            {["X", "Y", "Z"].map((axis, index) => (
-              <Input
-                key={axis}
-                value={component.properties[property][index]}
-                onChange={(e) => handleComponentPropertyChange(component, property, [
-                  ...component.properties[property].slice(0, index),
-                  parseFloat(e.target.value),
-                  ...component.properties[property].slice(index + 1),
-                ])}
-                placeholder={axis}
-              />
-            ))}
-          </div>
-        );
-      case "String":
-        return (
-          <Input
-            value={component.properties[property]}
-            onChange={(e) => handleComponentPropertyChange(component, property, e.target.value)}
-          />
-        );
-      case "Boolean":
-        return (
-          <>
-            <br />
-            <Checkbox
-              checked={component.properties[property]}
-              onCheckedChange={(e) => handleComponentPropertyChange(component, property, e)}
-            />
-          </>
-        );
-      case "Color":
-        return (
-          <Input
-            type="color"
-            value={component.properties[property]}
-            onChange={(e) => handleComponentPropertyChange(component, property, e.target.value)}
-          />
-        );
-      case "Float":
-        return (
-          <Input
-            type="number"
-            step="0.01"
-            value={component.properties[property]}
-            onChange={(e) => handleComponentPropertyChange(component, property, parseFloat(e.target.value))}
-          />
-        );
-      default:
-        return (
-          <Input
-            value={component.properties[property]}
-            onChange={(e) => handleComponentPropertyChange(component, property, e.target.value)}
-          />
-        );
+    if (component.data[property] == null) {
+      return null;
     }
-  };
 
-  const renderComponents = (componentsList) =>
-    componentsList.map((component) => (
-      <Card key={component.id} className="mb-2">
-        <CardHeader>
-          <CardTitle>{component.type}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {components[component.type] &&
-            components[component.type].map((property) => (
-              <div key={property.name} className="mb-2">
-                <Label>{property.name}</Label>
-                {renderPropertyInput(component, property.name, property.type)}
+    if (type === "Object" || type === "Array") {
+      return (
+        <Card key={property} className="mb-2">
+          <CardHeader>
+            <CardTitle>{property}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {Object.entries(component.data[property]).map(([key, val]) => (
+              <div key={key} className="mb-2">
+                <Label>{key}</Label>
+                {typeof val === 'object' && val !== null ? (
+                  renderPropertyInput({ data: val }, key, "Object")
+                ) : (
+                  <Input
+                    value={val}
+                    onChange={(e) => {
+                      handleComponentPropertyChange(component, property, { ...component.data[property], [key]: e.target.value });
+                    }}
+                  />
+                )}
               </div>
             ))}
+          </CardContent>
+        </Card>
+      );
+    }
+
+    if (type === "Vector3") {
+      return (
+        <div className="mb-2">
+          <Label>{property}</Label>
+          <div className="flex space-x-2">
+            {["X", "Y", "Z"].map((axis, index) => (
+              <div key={axis} className="flex flex-col">
+                <Label>{axis}</Label>
+                <Input
+                  type="number"
+                  value={component.data[property][index]}
+                  onChange={(e) => handleComponentPropertyChange(component, property, [
+                    ...component.data[property].slice(0, index),
+                    parseFloat(e.target.value),
+                    ...component.data[property].slice(index + 1),
+                  ])}
+                  placeholder={axis}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (type === "Float") {
+      return (
+        <>
+          <Label>{property}</Label>
+          <Input
+            type="number"
+            value={component.data[property]}
+            onChange={(e) => handleComponentPropertyChange(component, property, parseFloat(e.target.value))}
+          />
+        </>
+      );
+    }
+
+    if (type === "Boolean") {
+      return (
+        <>
+          <Label>{property}</Label>
+          <Checkbox
+            checked={component.data[property]}
+            onCheckedChange={(e) => handleComponentPropertyChange(component, property, e)}
+          />
+        </>
+      );
+    }
+
+    return (
+      <>
+        <Label>{property}</Label>
+        <Input
+          value={component.data[property]}
+          onChange={(e) => handleComponentPropertyChange(component, property, e.target.value)}
+        />
+      </>
+    );
+  };
+
+  const renderRenderComponent = (component, property) => {
+    const obj = component.data[property];
+    const shape = Object.keys(obj)[0];
+    const [sideLength, color] = obj[shape];
+
+    return (
+      <Card key={property} className="mb-2">
+        <CardHeader>
+          <CardTitle>{property}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Label>Shape</Label>
+          <Input value={shape} readOnly />
+          <Label>Side Length</Label>
+          <Input
+            type="number"
+            value={sideLength}
+            onChange={(e) => {
+              const newSideLength = parseFloat(e.target.value);
+              handleComponentPropertyChange(component, property, { ...obj, [shape]: [newSideLength, color] });
+            }}
+          />
+          <Label>Color (RGB)</Label>
+          <div className="flex space-x-2">
+            {["R", "G", "B"].map((c, index) => (
+              <div key={c} className="flex flex-col">
+                <Label>{c}</Label>
+                <Input
+                  type="number"
+                  value={color[index]}
+                  onChange={(e) => {
+                    const newColor = color.map((v, i) => (i === index ? parseFloat(e.target.value) : v));
+                    handleComponentPropertyChange(component, property, { ...obj, [shape]: [sideLength, newColor] });
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderBounds = (component, property) => {
+    const bounds = component.data[property];
+    const limits = bounds.limits;
+    return (
+      <Card key={property} className="mb-2">
+        <CardHeader>
+          <CardTitle>{property}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {Object.entries(limits).map(([axis, value]) => (
+            <div key={axis} className="mb-2">
+              <Label>{axis.toUpperCase()}</Label>
+              <Input
+                type="number"
+                value={value[axis]}
+                onChange={(e) => {
+                  const newLimits = {
+                    ...limits,
+                    [axis]: { [axis]: parseFloat(e.target.value) }
+                  };
+                  handleComponentPropertyChange(component, property, { ...bounds, limits: newLimits });
+                }}
+              />
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderCooldown = (component, property) => {
+    const cooldown = component.data[property];
+    return (
+      <Card key={property} className="mb-2">
+        <CardHeader>
+          <CardTitle>{property}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {Object.entries(cooldown).map(([key, value]) => (
+            <div key={key} className="mb-2">
+              <Label>{key}</Label>
+              <Input
+                type="number"
+                value={value}
+                onChange={(e) => {
+                  const newCooldown = {
+                    ...cooldown,
+                    [key]: parseFloat(e.target.value)
+                  };
+                  handleComponentPropertyChange(component, property, newCooldown);
+                }}
+              />
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderComponents = (componentsList, object) =>
+    componentsList.map((component) => (
+      <Card key={component.data.uuid} className="mb-2">
+        <CardHeader>
+          <CardTitle>
+            <div className="flex flex-row gap-5">
+              <span className="pt-1 w-full">{component.id}</span>
+              <Button variant="ghost" className="h-1/4" onClick={() => deleteComponent(object, component)}>
+                <Trash size={16}/>
+              </Button>
+            </div>
+          </CardTitle>
+          <CardDescription>UUID: {component.data.uuid}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {components[component.id] &&
+            components[component.id].map((property) => {
+              if (component.id === "RenderComponent" && property.name === "obj") {
+                return renderRenderComponent(component, property.name);
+              }
+              if (component.id === "CharacterController2D" && property.name === "bounds") {
+                return renderBounds(component, property.name);
+              }
+              if (property.name === "cooldown") {
+                return renderCooldown(component, property.name);
+              }
+              return (
+                <div key={property.name} className="mb-2">
+                  {renderPropertyInput(component, property.name, property.type)}
+                </div>
+              );
+            })}
         </CardContent>
       </Card>
     ));
 
+  const renderColliders = (collidersList, object) =>
+    (collidersList || []).map((collider, index) => (
+      <Card key={index} className="mb-2">
+        <CardHeader>
+          <CardTitle>
+            <div className="flex flex-row gap-5">
+              <span className="pt-1 w-full">{Object.keys(collider.collider)[0]}</span>
+              <Button variant="ghost" className="h-1/4" onClick={() => deleteCollider(object, collider)}>
+                <Trash size={16}/>
+              </Button>
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {Object.entries(collider.collider[Object.keys(collider.collider)[0]]).map(([key, value]) => (
+            <div key={key} className="mb-2">
+              <Label>{key}</Label>
+              {typeof value === 'object' && value !== null ? (
+                renderPropertyInput({ data: value }, key, "Object")
+              ) : (
+                <Input value={JSON.stringify(value)} readOnly />
+              )}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    ));
+
+  const renderStaticComponentsList = (componentsList) =>
+    componentsList.map((component) => (
+      <div key={component.data.uuid} className="pl-2 flex items-center justify-between cursor-pointer hover:bg-muted">
+        <span onClick={() => {
+          setSelectedStaticComponent(component);
+          setSelectedObject(null);
+        }}>
+          {component.id}
+        </span>
+        <Button variant="ghost" size="icon" onClick={() => deleteStaticComponent(component)}>
+          <Trash size={16} />
+        </Button>
+      </div>
+    ));
+
+  const renderStaticComponent = (component) => (
+    <>
+        {staticComponentsTypes[component.id] &&
+          staticComponentsTypes[component.id].map((property) => {
+            if (property.name === "cooldown") {
+              return renderCooldown(component, property.name);
+            }
+            return (
+              <div key={property.name} className="mb-2">
+                {renderPropertyInput(component, property.name, property.type)}
+              </div>
+            );
+          })}
+      </>
+  );
+
   const addComponentToSelectedObject = (type) => {
     const newComponent = {
-      id: Date.now(),
-      type,
-      properties: Object.fromEntries(components[type].map((prop) => [prop.name, prop.type === "Vector3" ? [0, 0, 0] : prop.type === "Boolean" ? false : prop.type === "Float" ? 0.0 : ""])),
+      id: type,
+      data: Object.fromEntries(components[type].map((prop) => {
+        if (prop.name === "bounds") {
+          return [prop.name, { limits: { x: { x: 0 }, y: { y: 0 } } }];
+        }
+        if (prop.name === "obj") {
+          return [prop.name, { Triangle: [0, [0, 0, 0]] }];
+        }
+        if (prop.name === "cooldown") {
+          return [prop.name, { nanos: 0, secs: 0 }];
+        }
+        if (prop.name === "enemies") {
+          return [prop.name, []];
+        }
+        if (prop.name === "last_spawn") {
+          return [prop.name, null];
+        }
+        return [
+          prop.name,
+          prop.type === "Vector3"
+            ? [0, 0, 0]
+            : prop.type === "Boolean"
+            ? false
+            : prop.type === "Float"
+            ? 0.0
+            : prop.type === "Object" || prop.type === "Array"
+            ? {}
+            : "",
+        ];
+      })),
     };
+    newComponent.data["uuid"] = v4();
+    newComponent.data["state"] = { _state: null };
+
     selectedObject.components.push(newComponent);
     setHierarchy([...hierarchy]);
     setShowCommandMenu(false);
   };
 
   const addStaticComponent = (type) => {
+    const data = Object.fromEntries(staticComponentsTypes[type].map((prop) => {
+      if (prop.name === "cooldown") {
+        return [prop.name, { nanos: 0, secs: 0 }];
+      }
+      if (prop.name === "enemies") {
+        return [prop.name, []];
+      }
+      if (prop.name === "last_spawn") {
+        return [prop.name, null];
+      }
+      return [
+        prop.name,
+        prop.type === "Vector3"
+          ? [0, 0, 0]
+          : prop.type === "Boolean"
+          ? false
+          : prop.type === "Float"
+          ? 0.0
+          : prop.type === "Object" || prop.type === "Array"
+          ? {}
+          : "",
+      ];
+    }));
+    data["uuid"] = v4();
     const newComponent = {
-      id: Date.now(),
-      type,
-      properties: Object.fromEntries(staticComponentsList[type].map((prop) => [prop.name, prop.type === "Vector3" ? [0, 0, 0] : prop.type === "Boolean" ? false : prop.type === "Float" ? 0.0 : ""])),
+      id: type,
+      data: data,
     };
     setStaticComponents([...staticComponents, newComponent]);
     setShowCommandMenu(false);
   };
 
+  const addCollider = (type) => {
+    const newCollider = {
+      collider: { [type]: { side_length: 0.1 } },
+    };
+    selectedObject.colliders.push(newCollider);
+    setHierarchy([...hierarchy]);
+    setShowCommandMenu(false);
+  };
+
   const getAvailableComponents = () => {
-    const existingComponentTypes = selectedObject ? selectedObject.components.map((component) => component.type) : [];
+    const existingComponentTypes = selectedObject ? selectedObject.components.map((component) => component.id) : [];
     return Object.keys(components).filter((type) => !existingComponentTypes.includes(type));
   };
 
   const getAvailableStaticComponents = () => {
-    const existingComponentTypes = staticComponents.map((component) => component.type);
-    return Object.keys(staticComponentsList).filter((type) => !existingComponentTypes.includes(type));
+    const existingComponentTypes = staticComponents.map((component) => component.id);
+    return Object.keys(staticComponentsTypes).filter((type) => !existingComponentTypes.includes(type));
+  };
+
+  const getAvailableColliders = () => {
+    return ["CubeCollider"]; // Add more collider types as needed
   };
 
   const renderHierarchy = (hierarchy) =>
@@ -314,25 +603,35 @@ export default function Edit() {
       </div>
     ));
 
-  const renderStaticComponents = (componentsList) =>
-    componentsList.map((component) => (
-      <div key={component.id} className="pl-2">
-        <div className="flex items-center cursor-pointer hover:bg-muted" onClick={() => {
-          setSelectedStaticComponent(component);
-          setSelectedObject(null);
-        }}>
-          <Button variant="ghost" size="icon">
-            <ChevronRight size={16} />
-          </Button>
-          <span className="w-full">{component.type}</span>
-          <Button variant="ghost" size="icon" onClick={() => deleteStaticComponent(component)}>
-            <Trash size={16} />
-          </Button>
-        </div>
-      </div>
-    ));
+  const exportData = () => {
+    const cleanData = (data) => {
+      if (typeof data === "string" && data === "") {
+        return null;
+      }
+      if (Array.isArray(data)) {
+        return data.map(cleanData);
+      }
+      if (typeof data === "object" && data !== null) {
+        return Object.fromEntries(
+          Object.entries(data).map(([key, value]) => [key, cleanData(value)])
+        );
+      }
+      return data;
+    };
 
-  const start_preview = () => {};
+    const data = {
+      objects: cleanData(hierarchy),
+      static_components: cleanData(staticComponents),
+      graphics: true,
+    };
+    console.log(JSON.stringify(data));
+    return JSON.stringify(data);
+  };
+
+  const start_preview = () => {
+    invoke("start_preview", { data: exportData() });
+  };
+
   const pause_preview = () => {};
   const stop_preview = () => {};
 
@@ -353,23 +652,23 @@ export default function Edit() {
         <ScrollArea className="h-1/2">
           <h1 className="p-4 text-xl font-semibold">Static Components</h1>
           <div className="p-4">
-            {renderStaticComponents(staticComponents)}
+            {renderStaticComponentsList(staticComponents)}
             <Button onClick={() => { setShowCommandMenu(true); setCommandMenuType("static"); }} className="mt-4 w-full">
               <Plus size={16} className="mr-2" />
               Add Static Component
             </Button>
           </div>
         </ScrollArea>
-        <Separator/>
+        <Separator />
         <div className="flex flex-row gap-5 h-1/12 p-5 items-center w-full justify-center">
-          <Button onClick={() => {start_preview()}}>
-            <Play size={16}/>
+          <Button onClick={() => { start_preview() }}>
+            <Play size={16} />
           </Button>
-          <Button onClick={() => {pause_preview()}}>
-            <Pause size={16}/>
+          <Button onClick={() => { pause_preview() }}>
+            <Pause size={16} />
           </Button>
-          <Button onClick={() => {stop_preview()}}>
-            <Square size={16}/>
+          <Button onClick={() => { stop_preview() }}>
+            <Square size={16} />
           </Button>
         </div>
       </div>
@@ -379,14 +678,20 @@ export default function Edit() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-2xl">{selectedObject.name}</CardTitle>
-                <CardDescription>Components</CardDescription>
+                <CardDescription>ID: {selectedObject.id}</CardDescription>
               </CardHeader>
               <CardContent>
-                {renderComponents(selectedObject.components)}
+                {renderComponents(selectedObject.components, selectedObject)}
+                <Separator className="my-4" />
+                {renderColliders(selectedObject.colliders, selectedObject)}
                 <Separator className="my-4" />
                 <Button onClick={() => { setShowCommandMenu(true); setCommandMenuType("normal"); }} className="w-full">
                   <Plus size={16} className="mr-2" />
                   Add Component
+                </Button>
+                <Button onClick={() => { setShowCommandMenu(true); setCommandMenuType("collider"); }} className="w-full mt-2">
+                  <Plus size={16} className="mr-2" />
+                  Add Collider
                 </Button>
               </CardContent>
             </Card>
@@ -395,16 +700,11 @@ export default function Edit() {
           <div className="p-4">
             <Card>
               <CardHeader>
-                <CardTitle>{selectedStaticComponent.type}</CardTitle>
+                <CardTitle>{selectedStaticComponent.id}</CardTitle>
+                <CardDescription>UUID: {selectedStaticComponent.data.uuid}</CardDescription>
               </CardHeader>
               <CardContent>
-                {staticComponentsList[selectedStaticComponent.type] &&
-                  staticComponentsList[selectedStaticComponent.type].map((property) => (
-                    <div key={property.name} className="mb-2">
-                      <Label>{property.name}</Label>
-                      {renderPropertyInput(selectedStaticComponent, property.name, property.type)}
-                    </div>
-                  ))}
+                {renderStaticComponent(selectedStaticComponent)}
               </CardContent>
             </Card>
           </div>
@@ -431,7 +731,7 @@ export default function Edit() {
                       ) : (
                         <CommandEmpty>No components left to add</CommandEmpty>
                       )
-                    ) : (
+                    ) : commandMenuType === "static" ? (
                       getAvailableStaticComponents().length > 0 ? (
                         getAvailableStaticComponents().map((type) => (
                           <CommandItem key={type} onSelect={() => addStaticComponent(type)}>
@@ -441,7 +741,17 @@ export default function Edit() {
                       ) : (
                         <CommandEmpty>No static components left to add</CommandEmpty>
                       )
-                    )}
+                    ) : commandMenuType === "collider" ? (
+                      getAvailableColliders().length > 0 ? (
+                        getAvailableColliders().map((type) => (
+                          <CommandItem key={type} onSelect={() => addCollider(type)}>
+                            {type}
+                          </CommandItem>
+                        ))
+                      ) : (
+                        <CommandEmpty>No colliders left to add</CommandEmpty>
+                      )
+                    ) : null}
                   </CommandGroup>
                 </CommandList>
               </Command>

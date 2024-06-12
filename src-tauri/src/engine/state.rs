@@ -1,3 +1,4 @@
+use winit::platform::run_return::EventLoopExtRunReturn;
 use crate::engine::camera;
 use crate::engine::component;
 use crate::engine::gameobject;
@@ -244,14 +245,20 @@ impl Engine {
         EngineSaveData::from_engine_to_json(self)
     }
 
-    pub async fn import(mut data: EngineSaveData) -> (Self, EventLoop<()>) {
-        EngineSaveData::to_engine(&mut data).await
+    pub async fn import(mut data: EngineSaveData, l: Option<EventLoop<()>>) -> (Self, EventLoop<()>) {
+        EngineSaveData::to_engine(&mut data, None).await
     }
 
-    pub async fn import_from_json(data: String) -> (Self, EventLoop<()>) {
+    pub async fn import_from_json(data: String, l: Option<EventLoop<()>>) -> (Self, EventLoop<()>) {
         info!("Loading json... (state.rs)");
-        EngineSaveData::to_engine_from_data(data).await
+        EngineSaveData::to_engine_from_data(data, l).await
     }
+
+    pub async fn import_from_json_engine(data: String, l: Option<EventLoop<()>>) -> Self {
+        info!("Loading json... (state.rs)");
+        EngineSaveData::to_engine_from_data(data, l).await.0
+    }
+
 
     pub fn tick(&mut self) {
         if (self.paused) { return; }
@@ -349,7 +356,7 @@ impl Engine {
         None
     }
 
-    pub fn run(engine: Arc<Mutex<Self>>, event_loop: EventLoop<()>) {
+    pub fn run(engine: Arc<Mutex<Self>>, mut event_loop: EventLoop<()>) {
         // println!("running");
         let self_clone = engine.clone();
         thread::spawn(move || {
@@ -382,7 +389,7 @@ impl Engine {
 
         let win_id = engine.lock().unwrap().win_id;
 
-        event_loop.run(move |event, _, control_flow| {
+        event_loop.run_return(move |event, _, control_flow| {
             if let Some(app_event) = AppEvent::from_event(&event, &win_id) {
                 if event_tx.send(app_event.clone()).is_err() {
                     *control_flow = ControlFlow::Exit;
@@ -411,6 +418,12 @@ impl Engine {
                     AppEvent::MouseMoved(position) => {
                         engine_lock.mouse_position = position;
                     }
+                    AppEvent::Closed => {
+                        info!("App Closed...");
+                        engine_lock.renderer.lock().unwrap().stop();
+                        // *control_flow = ControlFlow::Exit;
+                        return;
+                    }
                     _ => {}
                 }
 
@@ -427,5 +440,7 @@ impl Engine {
                 Err(_) => {}
             }
         });
+
+        drop(event_loop);
     }
 }

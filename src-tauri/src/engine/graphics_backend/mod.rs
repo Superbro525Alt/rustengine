@@ -29,7 +29,7 @@ pub struct State {
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
-    pub window: Arc<Mutex<Window>>,
+    // pub window: Arc<Mutex<Window>>,
     pub render_pipeline: wgpu::RenderPipeline,
     pub camera: Camera,
     pub camera_uniform: CameraUniform,
@@ -42,19 +42,19 @@ pub struct State {
 }
 
 pub trait Backend {
-    async fn new(window: Arc<Mutex<Window>>) -> Self;
+    async fn new(window: &Window) -> Self;
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>);
     fn update(&mut self, new_mesh_data: Vec<(Vec<Vertex>, Vec<u16>)>, bg: [f32; 3]);
     fn render(&mut self) -> Result<(), wgpu::SurfaceError>;
 }
 
 impl Backend for State {
-    async fn new(window: Arc<Mutex<Window>>) -> Self {
-        let size = window.lock().unwrap().inner_size();
+    async fn new(window: &Window) -> Self {
+        let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
 
-        let surface = unsafe { instance.create_surface(&*window.lock().unwrap()) }.unwrap();
+        let surface = unsafe { instance.create_surface(window) }.unwrap();
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -198,7 +198,7 @@ impl Backend for State {
             camera_buffer,
             camera_uniform,
             camera_bind_group,
-            window,
+            // window,
             meshes: Vec::new(),
             bg: [0.0, 0.0, 0.0],
             staging_belt,

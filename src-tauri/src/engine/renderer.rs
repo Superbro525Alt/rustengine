@@ -3,6 +3,7 @@ use crate::engine::graphics_backend::primitives;
 use crate::engine::graphics_backend::{
     object::Object, primitives::Cube, vertex::Vertex, Backend, State,
 };
+use log::{info, warn};
 // use crate::engine::state::CustomEvent;
 use rand::Rng;
 use std::ops::Index;
@@ -24,10 +25,13 @@ pub struct Renderer {
     pub width: u32,
     pub height: u32,
     pub render_queue: Arc<Mutex<Vec<component::RenderOutput>>>,
-    pub window: Arc<Mutex<Window>>,
+    pub window: Option<Window>,
     pub backend: State,
     pub dt: Option<Duration>,
 }
+
+unsafe impl Send for Renderer {}
+unsafe impl Sync for Renderer {}
 
 impl Renderer {
     pub async fn new(
@@ -36,15 +40,14 @@ impl Renderer {
         height: u32,
         event_loop: &EventLoop<()>,
     ) -> (Self, WindowId) {
-        let window = Arc::new(Mutex::new(
-            WindowBuilder::new()
+        let window = WindowBuilder::new()
                 .with_title(&title)
                 .with_inner_size(winit::dpi::LogicalSize::new(width as f64, height as f64))
                 .build(&event_loop)
-                .expect("Failed to build window"),
-        ));
+                .expect("Failed to build window");
 
-        let backend = State::new(window.clone()).await;
+        let backend = State::new(&window).await;
+        let id = window.id().clone();
 
         (
             Self {
@@ -52,12 +55,19 @@ impl Renderer {
                 width,
                 height,
                 render_queue: Arc::new(Mutex::new(Vec::new())),
-                window: window.clone(),
+                window: Some(window),
                 backend,
                 dt: None,
             },
-            window.clone().lock().unwrap().id().clone(),
+            id
         )
+    }
+
+    pub fn stop(&mut self) {
+        warn!("Dropping window...");
+        drop(self.window.as_mut());
+        self.window = None;
+        // self.window = None;
     }
 
     pub fn run(
@@ -77,20 +87,20 @@ impl Renderer {
                 Ok(event) => match event {
                     AppEvent::KeyPressed(key_code) => {
                         if key_code == winit::event::VirtualKeyCode::Escape {
-                            let average_frame_time = times
-                                .windows(2)
-                                .filter_map(|w| w[1].duration_since(w[0]).ok())
-                                .map(|duration| duration.as_millis())
-                                .sum::<u128>()
-                                as f64
-                                / (times.len() - 1) as f64;
-                            println!(
-                                "Average frame time: {} ms, FPS: {}",
-                                average_frame_time,
-                                1000.0 / average_frame_time
-                            );
-                            control_tx.send(ControlFlow::Exit);
-                            break;
+                            // let average_frame_time = times
+                            //     .windows(2)
+                            //     .filter_map(|w| w[1].duration_since(w[0]).ok())
+                            //     .map(|duration| duration.as_millis())
+                            //     .sum::<u128>()
+                            //     as f64
+                            //     / (times.len() - 1) as f64;
+                            // println!(
+                            //     "Average frame time: {} ms, FPS: {}",
+                            //     average_frame_time,
+                            //     1000.0 / average_frame_time
+                            // );
+                            // control_tx.send(ControlFlow::Exit);
+                            // break;
                         }
                     }
                     AppEvent::Resized(physical_size) => {
@@ -130,16 +140,18 @@ impl Renderer {
                         }
                     }
                     AppEvent::RedrawEventsCleared => {
-                        renderer
-                            .lock()
+                        let mut lock = &mut renderer.lock().unwrap().window;
+                        if lock.as_mut().is_none() { return; }
+                        lock
+                            .as_mut()
                             .unwrap()
-                            .window
-                            .lock()
-                            .unwrap()
+                            // .lock()
+                            // .unwrap()
                             .request_redraw();
                     }
                     AppEvent::Closed => {
-                        control_tx.send(ControlFlow::Exit).unwrap();
+                        // control_tx.send(ControlFlow::Exit);
+                        info!("Closing...");
                         let average_frame_time = times
                             .windows(2)
                             .filter_map(|w| w[1].duration_since(w[0]).ok())
@@ -151,7 +163,7 @@ impl Renderer {
                             average_frame_time,
                             1000.0 / average_frame_time
                         );
-                        break;
+                        // break;
                     }
                     _ => {
                         control_tx.send(ControlFlow::Poll);

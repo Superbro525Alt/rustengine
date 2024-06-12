@@ -10,7 +10,6 @@ import {
   Package2,
   Folder,
 } from "lucide-react";
-
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,10 +28,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState, useEffect } from "react";
+import { readDir, readTextFile, writeTextFile, removeFile } from '@tauri-apps/api/fs';
+import { join, basename } from '@tauri-apps/api/path';
+
+const examplePlugins = [
+  { name: "Plugin 1", description: "This is the first plugin.", icon: <Package /> },
+  { name: "Plugin 2", description: "This is the second plugin.", icon: <Package /> },
+  { name: "Plugin 3", description: "This is the third plugin.", icon: <Package /> },
+];
 
 export default function Home() {
   const [selectedMenu, setSelectedMenu] = useState("Dashboard");
@@ -46,20 +53,43 @@ export default function Home() {
   const [currentUser, setCurrentUser] = useState(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDuplicateDialogOpen, setIsDuplicateDialogOpen] = useState(false);
+  const [selectedProject, setSelectedProject] = useState(null);
 
   useEffect(() => {
     const fetchProjects = async () => {
-      // Example data for now
-      const exampleProjects = [
-        { name: "Asteroids", path: "projects/asteroids.json" },
-        // { name: "Project 2", path: "/path/to/project2" },
-        // { name: "Project 3", path: "/path/to/project3" },
-      ];
-      setProjects(exampleProjects);
+      const projectsDir = "projects/";
+      try {
+        const entries = await readDir(projectsDir);
+        const projectFiles = entries.filter(entry => entry.children === undefined);
+        const projects = await Promise.all(projectFiles.map(async file => ({
+          name: await basename(file.path),
+          path: file.path
+        })));
+        setProjects(projects);
+      } catch (error) {
+        console.error('Failed to load projects:', error);
+      }
     };
 
     fetchProjects();
   }, []);
+
+  const refreshProjects = async () => {
+    const projectsDir = "projects/";
+    try {
+      const entries = await readDir(projectsDir);
+      const projectFiles = entries.filter(entry => entry.children === undefined);
+      const projects = await Promise.all(projectFiles.map(async file => ({
+        name: await basename(file.path),
+        path: file.path
+      })));
+      setProjects(projects);
+    } catch (error) {
+      console.error('Failed to refresh projects:', error);
+    }
+  };
 
   const openSettingsPopup = () => setIsSettingsOpen(true);
   const closeSettingsPopup = () => setIsSettingsOpen(false);
@@ -106,13 +136,43 @@ export default function Home() {
     window.location.href = url.toString();
   };
 
-  const handleDeleteProject = (project) => {
-    alert(`Deleting project: ${project.name}`);
+  const handleDeleteProject = async () => {
+    if (selectedProject) {
+      try {
+        await removeFile(selectedProject.path);
+        setIsDeleteDialogOpen(false);
+        setSelectedProject(null);
+        refreshProjects();
+      } catch (error) {
+        console.error(`Failed to delete project: ${selectedProject.name}`, error);
+      }
+    }
   };
 
-  const handleDuplicateProject = (project) => {
-    alert(`Duplicating project: ${project.name}`);
-  };
+  const handleDuplicateProject = async () => {
+  if (selectedProject) {
+    try {
+      const projectContent = await readTextFile(selectedProject.path);
+      const projectName = selectedProject.name.replace('.json', '');
+      let newProjectName = `${projectName}_copy.json`;
+      let newProjectPath = await join("projects", newProjectName);
+
+      // Check if the file already exists, if so, keep appending '_copy'
+      while (projects.some(project => project.path.endsWith(newProjectName))) {
+        const baseName = newProjectName.replace('.json', '');
+        newProjectName = `${baseName}_copy.json`;
+        newProjectPath = await join("projects", newProjectName);
+      }
+
+      await writeTextFile(newProjectPath, projectContent);
+      setIsDuplicateDialogOpen(false);
+      setSelectedProject(null);
+      refreshProjects();
+    } catch (error) {
+      console.error(`Failed to duplicate project: ${selectedProject.name}`, error);
+    }
+  }
+};
 
   const renderContent = () => {
     switch (selectedMenu) {
@@ -138,8 +198,8 @@ export default function Home() {
                 <CardContent>
                   <div className="flex gap-2">
                     <Button onClick={() => handleOpenProject(project)}>Open</Button>
-                    <Button variant="destructive" onClick={() => handleDeleteProject(project)}>Delete</Button>
-                    <Button onClick={() => handleDuplicateProject(project)}>Duplicate</Button>
+                    <Button variant="destructive" onClick={() => { setSelectedProject(project); setIsDeleteDialogOpen(true); }}>Delete</Button>
+                    <Button onClick={() => { setSelectedProject(project); setIsDuplicateDialogOpen(true); }}>Duplicate</Button>
                   </div>
                 </CardContent>
               </Card>
@@ -150,9 +210,20 @@ export default function Home() {
         return (
           <div className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
             <h1 className="text-lg font-semibold md:text-2xl">Plugins & Marketplace</h1>
-            <div className="rounded-lg border border-dashed p-4 text-center">
-              Browse plugins and marketplace items.
-            </div>
+            {examplePlugins.map((plugin) => (
+              <Card key={plugin.name} className="mb-4">
+                <CardHeader>
+                  <CardTitle>{plugin.name}</CardTitle>
+                  <CardDescription>{plugin.description}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    {plugin.icon}
+                    <Button>Install</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         );
       default:
@@ -168,8 +239,7 @@ export default function Home() {
   };
 
   const getButtonClass = (menu) => {
-    const baseClass =
-      "flex items-center gap-3 rounded-lg px-3 py-2 transition-all mb-2";
+    const baseClass = "flex items-center gap-3 rounded-lg px-3 py-2 transition-all mb-2";
     const hoverClass = "hover:bg-primary/10";
     const activeClass = "bg-secondary text-secondary-foreground";
 
@@ -255,7 +325,7 @@ export default function Home() {
                   <Folder className="h-5 w-5" />
                   Projects
                   <Badge className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white">
-                    6
+                    {projects.length}
                   </Badge>
                 </button>
                 <button
@@ -446,6 +516,30 @@ export default function Home() {
                 </Button>
               </CardContent>
             </Card>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Project</DialogTitle>
+            </DialogHeader>
+            <p>Are you sure you want to delete the project: {selectedProject?.name}?</p>
+            <DialogFooter>
+              <Button onClick={handleDeleteProject}>Delete</Button>
+              <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>Cancel</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={isDuplicateDialogOpen} onOpenChange={setIsDuplicateDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Duplicate Project</DialogTitle>
+            </DialogHeader>
+            <p>Are you sure you want to duplicate the project: {selectedProject?.name}?</p>
+            <DialogFooter>
+              <Button onClick={handleDuplicateProject}>Duplicate</Button>
+              <Button variant="outline" onClick={() => setIsDuplicateDialogOpen(false)}>Cancel</Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
