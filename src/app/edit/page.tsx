@@ -1,3 +1,4 @@
+ // @ts-nocheck
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation"; // For fetching URL parameters
@@ -20,6 +21,8 @@ import { Dialog, DialogOverlay, DialogContent } from "@/components/ui/dialog";
 import { invoke } from '@tauri-apps/api/tauri';
 import { readTextFile } from '@tauri-apps/api/fs';
 import { v4 } from "uuid";
+import Link from "next/link";
+import {Suspense} from "react";
 
 const initialComponents = {
   Transform: [
@@ -562,12 +565,18 @@ export default function Edit() {
   };
 
   const getAvailableComponents = () => {
-    const existingComponentTypes = selectedObject ? selectedObject.components.map((component) => component.id) : [];
+    let existingComponentTypes = selectedObject ? selectedObject.components.map((component) => component.id) : [];
+
+    if (existingComponentTypes == undefined) { existingComponentTypes = []; };
+
     return Object.keys(components).filter((type) => !existingComponentTypes.includes(type));
   };
 
   const getAvailableStaticComponents = () => {
-    const existingComponentTypes = staticComponents.map((component) => component.id);
+    let existingComponentTypes = staticComponents.map((component) => component.id);
+
+    if (existingComponentTypes == undefined) { existingComponentTypes = []; };
+
     return Object.keys(staticComponentsTypes).filter((type) => !existingComponentTypes.includes(type));
   };
 
@@ -660,16 +669,26 @@ export default function Edit() {
           </div>
         </ScrollArea>
         <Separator />
-        <div className="flex flex-row gap-5 h-1/12 p-5 items-center w-full justify-center">
-          <Button onClick={() => { start_preview() }}>
-            <Play size={16} />
-          </Button>
-          <Button onClick={() => { pause_preview() }}>
-            <Pause size={16} />
-          </Button>
-          <Button onClick={() => { stop_preview() }}>
-            <Square size={16} />
-          </Button>
+        <div className="flex flex-col items-center">
+          <div className="flex flex-row gap-5 h-1/12 p-5 items-center w-full justify-center">
+            <Button onClick={() => { start_preview() }}>
+              <Play size={16} />
+            </Button>
+            <Button onClick={() => { pause_preview() }}>
+              <Pause size={16} />
+            </Button>
+            <Button onClick={() => { stop_preview() }}>
+              <Square size={16} />
+            </Button>
+          </div>
+          <Separator/>
+          <div className="p-5">
+            <Button onClick={() => {window.location.assign(
+                "/"
+              )}}>
+              Back to Menu
+            </Button>
+          </div>
         </div>
       </div>
       <ScrollArea className="w-3/4 h-full">

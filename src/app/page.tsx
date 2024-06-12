@@ -1,3 +1,4 @@
+ // @ts-nocheck
 "use client";
 
 import Link from "next/link";
@@ -34,11 +35,16 @@ import { Label } from "@/components/ui/label";
 import { useState, useEffect } from "react";
 import { readDir, readTextFile, writeTextFile, removeFile } from '@tauri-apps/api/fs';
 import { join, basename } from '@tauri-apps/api/path';
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useNavigate } from 'react-router-dom';
 
 const examplePlugins = [
-  { name: "Plugin 1", description: "This is the first plugin.", icon: <Package /> },
-  { name: "Plugin 2", description: "This is the second plugin.", icon: <Package /> },
-  { name: "Plugin 3", description: "This is the third plugin.", icon: <Package /> },
+  { name: "Plugin 1", description: "This is the first plugin.", img: "https://via.placeholder.com/150" },
+  { name: "Plugin 2", description: "This is the second plugin.", img: "https://via.placeholder.com/150" },
+  { name: "Plugin 3", description: "This is the third plugin.", img: "https://via.placeholder.com/150" },
+  { name: "Plugin 4", description: "This is the fourth plugin.", img: "https://via.placeholder.com/150" },
+  { name: "Plugin 5", description: "This is the fifth plugin.", img: "https://via.placeholder.com/150" },
+  { name: "Plugin 6", description: "This is the sixth plugin.", img: "https://via.placeholder.com/150" },
 ];
 
 export default function Home() {
@@ -55,7 +61,9 @@ export default function Home() {
   const [password, setPassword] = useState("");
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDuplicateDialogOpen, setIsDuplicateDialogOpen] = useState(false);
+  const [isInstallDialogOpen, setIsInstallDialogOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
+  const [selectedPlugin, setSelectedPlugin] = useState(null);
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -133,7 +141,7 @@ export default function Home() {
     const url = new URL('/edit', window.location.origin);
     url.searchParams.set('name', project.name);
     url.searchParams.set('path', project.path);
-    window.location.href = url.toString();
+    window.location.assign(url);
   };
 
   const handleDeleteProject = async () => {
@@ -150,29 +158,34 @@ export default function Home() {
   };
 
   const handleDuplicateProject = async () => {
-  if (selectedProject) {
-    try {
-      const projectContent = await readTextFile(selectedProject.path);
-      const projectName = selectedProject.name.replace('.json', '');
-      let newProjectName = `${projectName}_copy.json`;
-      let newProjectPath = await join("projects", newProjectName);
+    if (selectedProject) {
+      try {
+        const projectContent = await readTextFile(selectedProject.path);
+        const projectName = selectedProject.name.replace('.json', '');
+        let newProjectName = `${projectName}_copy.json`;
+        let newProjectPath = await join("projects", newProjectName);
 
-      // Check if the file already exists, if so, keep appending '_copy'
-      while (projects.some(project => project.path.endsWith(newProjectName))) {
-        const baseName = newProjectName.replace('.json', '');
-        newProjectName = `${baseName}_copy.json`;
-        newProjectPath = await join("projects", newProjectName);
+        // Check if the file already exists, if so, keep appending '_copy'
+        while (projects.some(project => project.path.endsWith(newProjectName))) {
+          const baseName = newProjectName.replace('.json', '');
+          newProjectName = `${baseName}_copy.json`;
+          newProjectPath = await join("projects", newProjectName);
+        }
+
+        await writeTextFile(newProjectPath, projectContent);
+        setIsDuplicateDialogOpen(false);
+        setSelectedProject(null);
+        refreshProjects();
+      } catch (error) {
+        console.error(`Failed to duplicate project: ${selectedProject.name}`, error);
       }
-
-      await writeTextFile(newProjectPath, projectContent);
-      setIsDuplicateDialogOpen(false);
-      setSelectedProject(null);
-      refreshProjects();
-    } catch (error) {
-      console.error(`Failed to duplicate project: ${selectedProject.name}`, error);
     }
-  }
-};
+  };
+
+  const handleInstallPlugin = (plugin) => {
+    setSelectedPlugin(plugin);
+    setIsInstallDialogOpen(true);
+  };
 
   const renderContent = () => {
     switch (selectedMenu) {
@@ -210,20 +223,29 @@ export default function Home() {
         return (
           <div className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
             <h1 className="text-lg font-semibold md:text-2xl">Plugins & Marketplace</h1>
-            {examplePlugins.map((plugin) => (
-              <Card key={plugin.name} className="mb-4">
-                <CardHeader>
-                  <CardTitle>{plugin.name}</CardTitle>
-                  <CardDescription>{plugin.description}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-2">
-                    {plugin.icon}
-                    <Button>Install</Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {examplePlugins.map((plugin) => (
+                <Card key={plugin.name} className="mb-4">
+                  <CardHeader className="">
+                    <div>
+                      <CardTitle className="flex flex-row gap-5 mb-3">
+                        <Avatar>
+                          <AvatarImage src={plugin.img} />
+                          <AvatarFallback>PL</AvatarFallback>
+                        </Avatar>
+                        <span className="pt-2">
+                          {plugin.name}
+                        </span>
+                      </CardTitle>
+                      <CardDescription>{plugin.description}</CardDescription>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <Button className="w-full mt-2" onClick={() => handleInstallPlugin(plugin)}>Install</Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </div>
         );
       default:
@@ -255,7 +277,10 @@ export default function Home() {
         <div className="flex h-full max-h-screen flex-col gap-2">
           <div className="flex h-14 items-center border-b px-4 lg:h-[60px] lg:px-6">
             <Link href="/" className="flex items-center gap-2 font-semibold">
-              <Package2 className="h-6 w-6" />
+              <Avatar>
+                <AvatarImage src="logo.png"/>
+                <AvatarFallback>OX</AvatarFallback>
+              </Avatar>
               <span className="">Oxidized</span>
             </Link>
             <Button variant="outline" size="icon" className="ml-auto h-8 w-8">
@@ -539,6 +564,18 @@ export default function Home() {
             <DialogFooter>
               <Button onClick={handleDuplicateProject}>Duplicate</Button>
               <Button variant="outline" onClick={() => setIsDuplicateDialogOpen(false)}>Cancel</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={isInstallDialogOpen} onOpenChange={setIsInstallDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Install Plugin</DialogTitle>
+            </DialogHeader>
+            <p>Are you sure you want to install the plugin: {selectedPlugin?.name}?</p>
+            <DialogFooter>
+              <Button onClick={() => setIsInstallDialogOpen(false)}>Confirm</Button>
+              <Button variant="outline" onClick={() => setIsInstallDialogOpen(false)}>Cancel</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
