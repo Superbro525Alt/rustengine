@@ -1,4 +1,4 @@
- // @ts-nocheck
+// @ts-nocheck
 "use client";
 
 import Link from "next/link";
@@ -34,10 +34,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState, useEffect } from "react";
 import { readDir, readTextFile, writeTextFile, removeFile } from '@tauri-apps/api/fs';
-import { join, basename } from '@tauri-apps/api/path';
+import { join } from '@tauri-apps/api/path';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useNavigate } from 'react-router-dom';
+import 'path';
 
+async function basename(filePath: string): Promise<string> {
+    // Return the base name of the file
+    return path.basename(filePath);
+}
 const examplePlugins = [
   { name: "Plugin 1", description: "This is the first plugin.", img: "https://via.placeholder.com/150" },
   { name: "Plugin 2", description: "This is the second plugin.", img: "https://via.placeholder.com/150" },
@@ -89,13 +94,18 @@ export default function Home() {
     try {
       const entries = await readDir(projectsDir);
       const projectFiles = entries.filter(entry => entry.children === undefined);
-      const projects = await Promise.all(projectFiles.map(async file => ({
-        name: await basename(file.path),
-        path: file.path
-      })));
+      const projects = [];
+      projectFiles.forEach(async (file) => {
+        if (file.path != undefined) {
+          projects.push({
+            name: await basename(file.path),
+            path: file.path
+          });
+        }
+      });
       setProjects(projects);
     } catch (error) {
-      console.error('Failed to refresh projects:', error);
+      // console.error('Failed to refresh projects:', error);
     }
   };
 
@@ -163,15 +173,15 @@ export default function Home() {
         const projectContent = await readTextFile(selectedProject.path);
         const projectName = selectedProject.name.replace('.json', '');
         let newProjectName = `${projectName}_copy.json`;
-        let newProjectPath = await join("projects", newProjectName);
+        let newProjectPath = "projects/" + newProjectName;
 
         // Check if the file already exists, if so, keep appending '_copy'
         while (projects.some(project => project.path.endsWith(newProjectName))) {
           const baseName = newProjectName.replace('.json', '');
           newProjectName = `${baseName}_copy.json`;
-          newProjectPath = await join("projects", newProjectName);
+          newProjectPath = "projects/" + newProjectNam;
         }
-
+        //
         await writeTextFile(newProjectPath, projectContent);
         setIsDuplicateDialogOpen(false);
         setSelectedProject(null);

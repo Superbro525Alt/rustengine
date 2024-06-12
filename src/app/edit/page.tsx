@@ -1,4 +1,4 @@
- // @ts-nocheck
+// @ts-nocheck
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation"; // For fetching URL parameters
@@ -517,6 +517,10 @@ export default function Edit() {
     newComponent.data["uuid"] = v4();
     newComponent.data["state"] = { _state: null };
 
+    if (!selectedObject.components) {
+      selectedObject.components = [];
+    }
+
     selectedObject.components.push(newComponent);
     setHierarchy([...hierarchy]);
     setShowCommandMenu(false);
@@ -559,26 +563,27 @@ export default function Edit() {
     const newCollider = {
       collider: { [type]: { side_length: 0.1 } },
     };
+
+    if (!selectedObject.colliders) {
+      selectedObject.colliders = [];
+    }
+
     selectedObject.colliders.push(newCollider);
     setHierarchy([...hierarchy]);
     setShowCommandMenu(false);
   };
 
   const getAvailableComponents = () => {
-    let existingComponentTypes = selectedObject ? selectedObject.components.map((component) => component.id) : [];
+  const existingComponentTypes = selectedObject?.components?.map((component) => component.id) ?? [];
+  return [];
+  // return Object.keys(components).filter((type) => !existingComponentTypes.includes(type));
+};
 
-    if (existingComponentTypes == undefined) { existingComponentTypes = []; };
-
-    return Object.keys(components).filter((type) => !existingComponentTypes.includes(type));
-  };
-
-  const getAvailableStaticComponents = () => {
-    let existingComponentTypes = staticComponents.map((component) => component.id);
-
-    if (existingComponentTypes == undefined) { existingComponentTypes = []; };
-
-    return Object.keys(staticComponentsTypes).filter((type) => !existingComponentTypes.includes(type));
-  };
+const getAvailableStaticComponents = () => {
+  const existingComponentTypes = staticComponents.map((component) => component.id) ?? [];
+  // return Object.keys(staticComponentsTypes).filter((type) => !existingComponentTypes.includes(type));
+  return [];
+};
 
   const getAvailableColliders = () => {
     return ["CubeCollider"]; // Add more collider types as needed
