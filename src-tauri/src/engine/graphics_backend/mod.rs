@@ -22,6 +22,7 @@ use crate::engine::graphics_backend::mesh::Mesh;
 use crate::engine::graphics_backend::vertex::Vertex;
 use crate::engine::ui::{UIRenderer, UIElement, text::{Text, TextOrigin, TextRenderer}};
 
+use log::info;
 
 pub struct State {
     pub surface: wgpu::Surface,
@@ -52,9 +53,15 @@ impl Backend for State {
     async fn new(window: &Window) -> Self {
         let size = window.inner_size();
 
+        info!("Creating instance");
+
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
 
+        info!("Creating surface");
+
         let surface = unsafe { instance.create_surface(window) }.unwrap();
+
+        info!("Requesting adapter");
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -64,6 +71,8 @@ impl Backend for State {
             })
             .await
             .unwrap();
+
+        info!("Requesting device");
 
         let (device, queue) = adapter
             .request_device(

@@ -3,7 +3,7 @@ use crate::engine::graphics_backend::primitives;
 use crate::engine::graphics_backend::{
     object::Object, primitives::Cube, vertex::Vertex, Backend, State,
 };
-use log::{info, warn};
+use log::{info, warn, error};
 // use crate::engine::state::CustomEvent;
 use rand::Rng;
 use std::ops::Index;
@@ -40,14 +40,27 @@ impl Renderer {
         height: u32,
         event_loop: &EventLoop<()>,
     ) -> (Self, WindowId) {
-        let window = WindowBuilder::new()
+        info!("Creating window...");
+        let window = match WindowBuilder::new()
                 .with_title(&title)
                 .with_inner_size(winit::dpi::LogicalSize::new(width as f64, height as f64))
-                .build(&event_loop)
-                .expect("Failed to build window");
+                .build(&event_loop) {
+            Ok(window) => {
+                info!("Window created successfully.");
+                window
+            },
+            Err(e) => {
+                error!("Failed to create window: {:?}", e);
+                panic!("Failed to create window");
+            }
+        };
+        
+        info!("Creating backend...");
 
         let backend = State::new(&window).await;
         let id = window.id().clone();
+
+        info!("Window created!");
 
         (
             Self {

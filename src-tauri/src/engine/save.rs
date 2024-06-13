@@ -1,7 +1,13 @@
 use downcast_rs::{impl_downcast, Downcast};
 use rocket::form::validate::Len;
 pub use uuid::Uuid;
+
+#[cfg(target_os = "linux")]
 use winit::platform::x11::EventLoopBuilderExtX11;
+
+#[cfg(target_os = "windows")]
+use winit::platform::windows::EventLoopBuilderExtWindows;
+
 use crate::engine::static_component::Container;
 use std::sync::{Arc, Mutex};
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
@@ -599,15 +605,23 @@ impl EngineSaveData {
             event_loop = Some(EventLoopBuilder::<()>::with_user_event().with_any_thread(true).build());
         }
 
+        info!("Created event_loop");
+
         let mut engine = Engine::new(self.graphics, event_loop.unwrap()).await;
     
+        info!("Created engine.");
+
         for obj in self.objects.iter_mut() {
             engine.0.add_object(obj.to_game_object());
         }
 
+        info!("Added objects to engine.");
+
         for static_comp in self.static_components.iter_mut() {
             engine.0.add_static(static_comp.to_static_component());
         }
+
+        info!("Added static components to engine.");
 
         engine
     }

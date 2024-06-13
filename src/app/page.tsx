@@ -33,11 +33,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState, useEffect } from "react";
-import { readDir, readTextFile, writeTextFile, removeFile } from '@tauri-apps/api/fs';
+import { readDir, readTextFile, writeTextFile, removeFile, createDir } from '@tauri-apps/api/fs';
 import { join } from '@tauri-apps/api/path';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useNavigate } from 'react-router-dom';
-import 'path';
+// use the path module from Node.js
+import path from 'path';
+import { documentDir } from "@tauri-apps/api/path";
+import { useToast } from "@/components/ui/use-toast"
 
 async function basename(filePath: string): Promise<string> {
     // Return the base name of the file
@@ -69,44 +72,40 @@ export default function Home() {
   const [isInstallDialogOpen, setIsInstallDialogOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
   const [selectedPlugin, setSelectedPlugin] = useState(null);
+  const [isNewProjectDialogOpen, setIsNewProjectDialogOpen] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
 
+  const { toast } = useToast();
+
+  const fetchProjects = async () => {
+    const documentsDir = await documentDir();
+    const projectsDir = documentsDir + 'oxidized/projects';
+
+    // if folder does not exist, create it. Use tauri fs operations
+    try {
+      await createDir(projectsDir, { recursive: true });
+    } catch (error) {
+      console.error('Failed to create projects directory:', error);
+    }
+
+    try {
+      const entries = await readDir(projectsDir);
+      const projectFiles = entries.filter(entry => entry.children === undefined);
+      const projects = await Promise.all(projectFiles.map(async file => ({
+        name: await basename(file.path),
+        path: file.path
+      })));
+      setProjects(projects);
+    } catch (error) {
+      console.error('Failed to load projects:', error);
+    }
+  };
   useEffect(() => {
-    const fetchProjects = async () => {
-      const projectsDir = "projects/";
-      try {
-        const entries = await readDir(projectsDir);
-        const projectFiles = entries.filter(entry => entry.children === undefined);
-        const projects = await Promise.all(projectFiles.map(async file => ({
-          name: await basename(file.path),
-          path: file.path
-        })));
-        setProjects(projects);
-      } catch (error) {
-        console.error('Failed to load projects:', error);
-      }
-    };
-
     fetchProjects();
   }, []);
 
   const refreshProjects = async () => {
-    const projectsDir = "projects/";
-    try {
-      const entries = await readDir(projectsDir);
-      const projectFiles = entries.filter(entry => entry.children === undefined);
-      const projects = [];
-      projectFiles.forEach(async (file) => {
-        if (file.path != undefined) {
-          projects.push({
-            name: await basename(file.path),
-            path: file.path
-          });
-        }
-      });
-      setProjects(projects);
-    } catch (error) {
-      // console.error('Failed to refresh projects:', error);
-    }
+    fetchProjects();
   };
 
   const openSettingsPopup = () => setIsSettingsOpen(true);
@@ -197,6 +196,73 @@ export default function Home() {
     setIsInstallDialogOpen(true);
   };
 
+  const handleNewProject = async () => {
+    setIsNewProjectDialogOpen(true);
+  };
+
+  const createNewProject = async () => {
+    if (!newProjectName) {
+      toast({
+        title: "Error",
+        description: "Project name cannot be empty.",
+        status: "error",
+        duration: 3000,
+      });
+      return;
+    }
+
+    const documentsDir = await documentDir();
+    const projectsDir = await join(documentsDir, 'oxidized/projects');
+    const newProjectPath = await join(projectsDir, `${newProjectName}.json`);
+
+    try {
+      const existingProjects = await readDir(projectsDir);
+      const projectExists = existingProjects.some(project => project.path === newProjectPath);
+
+      if (projectExists) {
+        toast({
+          title: "Error",
+          description: "A project with this name already exists.",
+          status: "error",
+          duration: 3000,
+        });
+        return;
+      }
+
+      console.log('Creating new project:', newProjectPath);
+
+      const defaultContent = JSON.stringify({
+        objects: [],
+        static_components: [],
+        graphics: true
+      }, null, 2);
+
+      console.log('Creating new project:', newProjectPath);
+
+      await writeTextFile(newProjectPath, defaultContent);
+
+      setIsNewProjectDialogOpen(false);
+      setNewProjectName("");
+      refreshProjects();
+
+      toast({
+        title: "Success",
+        description: "Project created successfully.",
+        status: "success",
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error("Failed to create a new project: ", error);
+      throw error;
+      toast({
+        title: "Error",
+        description: "Failed to create a new project. Please try again.",
+        status: "error",
+        duration: 3000,
+      });
+    }
+  };
+
   const renderContent = () => {
     switch (selectedMenu) {
       case "Dashboard":
@@ -211,7 +277,10 @@ export default function Home() {
       case "Projects":
         return (
           <div className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
-            <h1 className="text-lg font-semibold md:text-2xl">Projects</h1>
+            <div className="flex flex-row gap-5">
+              <h1 className="text-lg font-semibold md:text-2xl pt-1 w-full">Projects</h1> 
+              <Button onClick={() => handleNewProject()} className="w-1/2">New Project</Button>
+            </div>
             {projects.map((project) => (
               <Card key={project.name} className="mb-4">
                 <CardHeader>
@@ -586,6 +655,28 @@ export default function Home() {
             <DialogFooter>
               <Button onClick={() => setIsInstallDialogOpen(false)}>Confirm</Button>
               <Button variant="outline" onClick={() => setIsInstallDialogOpen(false)}>Cancel</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={isNewProjectDialogOpen} onOpenChange={setIsNewProjectDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>New Project</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-2">
+              <Label htmlFor="projectName">Project Name</Label>
+              <Input
+                id="projectName"
+                type="text"
+                placeholder="Enter project name"
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button onClick={createNewProject}>Create</Button>
+              <Button variant="outline" onClick={() => setIsNewProjectDialogOpen(false)}>Cancel</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

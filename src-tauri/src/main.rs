@@ -1,6 +1,6 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-#![feature(async_closure)]
+// #![feature(async_closure)]
 
 use std::sync::{Arc, Mutex};
 
@@ -29,18 +29,29 @@ async fn get_engine(data: String) {
 
 #[tauri::command]
 async fn start_preview(data: String) {
-    block_on(get_engine(data));
+    println!("Starting preview...");
 
-    info!("Done");
-    // block_on(e);
-    // print!("{}", e);
+    std::thread::spawn(|| {
+        let rt = Runtime::new().unwrap();
+        rt.block_on(get_engine(data));
+    });
+    // block_on(get_engine(data));
+
+    println!("Finished preview...");
 }
 
 fn main() {
+    std::env::set_var("RUST_LOG", "trace");
+    std::env::set_var("RUST_BACKTRACE", "1");
+
     #[cfg(target_os = "windows")]
     unsafe {
         winapi::um::shellscalingapi::SetProcessDpiAwareness(1);
     }
+
+    env_logger::init();
+
+    // block_on(start_preview("{objects: [], static_components: [], graphics: false}".to_string()));
 
     example::init();
 

@@ -27,7 +27,6 @@ use crate::engine::save::register_link;
 // pub use engine::save::{get_link};
 
 pub fn init() {
-    env_logger::init();
     pollster::block_on(run());
 }
 

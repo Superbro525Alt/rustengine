@@ -153,14 +153,21 @@ impl Engine {
     pub async fn new(graphics: bool, event_loop: EventLoop<()>) -> (Self, EventLoop<()>) {
         let event_loop_proxy = event_loop.create_proxy();
 
+        info!("Creating renderer...");
+
         let (mut renderer_instance, window_id) =
             renderer::Renderer::new(String::from("Engine"), 800, 600, &event_loop).await;
+
+        info!("Renderer created...");
+
         let renderer = Arc::new(Mutex::new(renderer_instance));
 
         let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
         let (control_tx, control_rx) = mpsc::channel::<ControlFlow>();
         let (frame_data_tx, frame_data_rx) = mpsc::channel::<FrameData>();
 
+        info!("Engine created...");
+        
         let engine = Self {
             state: EngineState::new(),
             renderer: renderer.clone(),
