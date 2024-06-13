@@ -17,9 +17,21 @@ use tauri::{CustomMenuItem, Menu, MenuItem, Submenu};
 mod engine;
 mod example;
 
+use tauri::api::path::document_dir;
+use tauri::api::path::home_dir;
+
 // use crate::engine::
 #[cfg(windows)]
 extern crate winapi;
+
+#[tauri::command]
+fn get_document_dir() -> String {
+  if cfg!(target_os = "windows") || cfg!(target_os = "macos") {
+    document_dir().unwrap().to_str().unwrap().to_string()
+  } else {
+    home_dir().unwrap().to_str().unwrap().to_string()
+  }
+}
 
 async fn get_engine(data: String) {
     let (eng, l) = engine::state::Engine::import_from_json(data, None).await;
@@ -41,8 +53,11 @@ async fn start_preview(data: String) {
 }
 
 fn main() {
-    std::env::set_var("RUST_LOG", "trace");
-    std::env::set_var("RUST_BACKTRACE", "1");
+    unsafe { 
+        std::env::set_var("RUST_LOG", "trace");
+        std::env::set_var("RUST_BACKTRACE", "1");
+    }
+
 
     #[cfg(target_os = "windows")]
     unsafe {
@@ -103,7 +118,7 @@ fn main() {
         }
         _ => {}
     })
-    .invoke_handler(tauri::generate_handler![start_preview])
+    .invoke_handler(tauri::generate_handler![start_preview, get_document_dir])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

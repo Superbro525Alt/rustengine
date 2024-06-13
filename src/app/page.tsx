@@ -98,31 +98,15 @@ export default function Home() {
   }
 
   
-const getDocumentDir = async () => {
-  try {
-    let d;
-    const platform = navigator.platform.toLowerCase();
-
-    if (platform.includes('win')) {
-      // Windows platform
-      d = await documentDir();
-    } else if (platform.includes('mac') || platform.includes('darwin')) {
-      // macOS platform
-      d = await documentDir();
-    } else if (platform.includes('linux')) {
-      // Linux platform
-      d = await homeDir();
-    } else {
-      // Default path if the platform is not recognized
-      d = './';
+  const getDocumentDir = async () => {
+    try {
+      const dir = await invoke('get_document_dir');
+      return dir;
+    } catch (err) {
+      console.error("Error retrieving document directory:", err);
+      return "./";
     }
-
-    return d;
-  } catch (err) {
-    console.error("Error retrieving document directory:", err);
-    return "./";
   }
-}
 
   const fetchProjects = async () => {
     const documentsDir = await getDocumentDir();
