@@ -42,6 +42,7 @@ import path from 'path';
 // import { join } from "path";
 import { documentDir, homeDir } from "@tauri-apps/api/path";
 import { useToast } from "@/components/ui/use-toast"
+import { invoke } from "@tauri-apps/api/tauri";
 
 async function basename(filePath: string): Promise<string> {
     return path.basename(filePath);
@@ -101,7 +102,7 @@ export default function Home() {
   const getDocumentDir = async () => {
     try {
       const dir = await invoke('get_document_dir');
-      return dir;
+      return dir + "/";
     } catch (err) {
       console.error("Error retrieving document directory:", err);
       return "./";
