@@ -77,8 +77,18 @@ export default function Home() {
 
   const { toast } = useToast();
 
+  const getDocumentDir = async () => {
+  try {
+    let d = await documentDir();
+    return d;
+  } catch (err) {
+    // console.error("Error retrieving document directory:", err);
+    return "./";
+  }
+}
+
   const fetchProjects = async () => {
-    const documentsDir = await documentDir();
+    const documentsDir = await getDocumentDir();
     const projectsDir = documentsDir + 'oxidized/projects';
 
     // if folder does not exist, create it. Use tauri fs operations
@@ -211,7 +221,7 @@ export default function Home() {
       return;
     }
 
-    const documentsDir = await documentDir();
+    const documentsDir = await getDocumentDir();
     const projectsDir = await join(documentsDir, 'oxidized/projects');
     const newProjectPath = await join(projectsDir, `${newProjectName}.json`);
 
