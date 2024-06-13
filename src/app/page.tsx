@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import Link from "next/link";
@@ -34,16 +33,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState, useEffect } from "react";
 import { readDir, readTextFile, writeTextFile, removeFile, createDir } from '@tauri-apps/api/fs';
-import { join } from '@tauri-apps/api/path';
+// import { join } from '@tauri-apps/api/path';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useNavigate } from 'react-router-dom';
 // use the path module from Node.js
 import path from 'path';
-import { documentDir } from "@tauri-apps/api/path";
+// import { join } from "path";
+import { documentDir, homeDir } from "@tauri-apps/api/path";
 import { useToast } from "@/components/ui/use-toast"
 
 async function basename(filePath: string): Promise<string> {
-    // Return the base name of the file
     return path.basename(filePath);
 }
 const examplePlugins = [
@@ -77,12 +76,49 @@ export default function Home() {
 
   const { toast } = useToast();
 
-  const getDocumentDir = async () => {
+  function join(...parts: string[]): Promise<string> {
+    return new Promise((resolve) => {
+        const separator = '/';
+        const result = parts.reduce((acc, part) => {
+            if (acc.endsWith(separator)) {
+                if (part.startsWith(separator)) {
+                    return acc + part.slice(1);
+                }
+                return acc + part;
+            } else {
+                if (part.startsWith(separator)) {
+                    return acc + part;
+                }
+                return acc + separator + part;
+            }
+        }, '');
+        resolve(result);
+    });
+  }
+
+  
+const getDocumentDir = async () => {
   try {
-    let d = await documentDir();
+    let d;
+    const platform = navigator.platform.toLowerCase();
+
+    if (platform.includes('win')) {
+      // Windows platform
+      d = await documentDir();
+    } else if (platform.includes('mac') || platform.includes('darwin')) {
+      // macOS platform
+      d = await documentDir();
+    } else if (platform.includes('linux')) {
+      // Linux platform
+      d = await homeDir();
+    } else {
+      // Default path if the platform is not recognized
+      d = './';
+    }
+
     return d;
   } catch (err) {
-    // console.error("Error retrieving document directory:", err);
+    console.error("Error retrieving document directory:", err);
     return "./";
   }
 }
@@ -263,7 +299,6 @@ export default function Home() {
       });
     } catch (error) {
       console.error("Failed to create a new project: ", error);
-      throw error;
       toast({
         title: "Error",
         description: "Failed to create a new project. Please try again.",
