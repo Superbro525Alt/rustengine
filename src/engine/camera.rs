@@ -75,7 +75,7 @@ impl Camera {
     }
 
     pub fn rotate(&mut self, delta_x: f32, delta_y: f32) {
-        let sensitivity = 0.1; // Sensitivity factor, adjust as needed
+        let sensitivity = 0.1; // Sensitivity factor 
 
         // Update yaw and pitch with sensitivity adjustment
         self.yaw += delta_x * sensitivity;

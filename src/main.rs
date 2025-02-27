@@ -1,5 +1,4 @@
 mod engine;
-mod frontend;
 
 use std::time::{Duration, Instant};
 #[allow(unused)]
@@ -100,12 +99,7 @@ impl Spawner {
         
         let enemy = e.add_object(make_base_game_object("enemy ".to_owned() + &self.enemies.len().to_string().to_owned()));
 
-        let op = GameObject::find_by_id(enemy).clone();
-
-        let exp = op.expect("cannot find");
-
-        let mut lock = exp.lock().unwrap();
-
+        let mut lock = enemy.get().lock().unwrap();
 
         lock.add_component(RenderComponent::new(Primitives::Octagon(0.1, [1.0, 0.0, 0.0])));
 
@@ -118,7 +112,7 @@ impl Spawner {
 
         drop(lock);
 
-        self.enemies.push(enemy);
+        self.enemies.push(enemy.get_id());
     }
 }
 

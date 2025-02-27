@@ -3,8 +3,11 @@ use crate::engine::component;
 use crate::engine::gameobject;
 use crate::engine::renderer;
 use crate::engine::static_component;
+use std::fmt::Display;
+use std::fmt::Formatter;
 use std::ops::Index;
 use std::process::exit;
+use std::ptr::NonNull;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -20,6 +23,8 @@ use winit::{
     window::{Window, WindowBuilder, WindowId},
 };
 
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -27,6 +32,7 @@ use crate::engine::physics::PhysicsEngine;
 
 use log::{info, warn, error};
 
+use super::gameobject::GameObject;
 use super::save::Link;
 use super::save::{EngineSaveData, StaticComponent};
 // use super::static_component::StaticComponent;
@@ -147,6 +153,20 @@ pub struct Engine {
 
 unsafe impl Send for Engine {}
 unsafe impl Sync for Engine {}
+
+struct ToLockGameObj {
+    id: i32
+}
+
+impl ToLockGameObj {
+    pub fn get(&self) -> Arc<Mutex<GameObject>> {
+        GameObject::find_by_id(self.id).unwrap().clone()
+    }
+
+    pub fn get_id(&self) -> i32 {
+        self.id
+    }
+}
 
 impl Engine {
     pub async fn new(graphics: bool, event_loop: EventLoop<()>) -> (Self, EventLoop<()>) {
@@ -290,11 +310,11 @@ impl Engine {
         }
     }
 
-    pub fn add_object(&mut self, obj: gameobject::MutexdGameObject) -> i32 {
+    pub fn add_object(&mut self, obj: gameobject::MutexdGameObject) -> ToLockGameObj {
         let id = obj.clone().lock().unwrap().id();
         self.state.add_object(id);
         self.physics_engine.add_object(id);
-        id
+        ToLockGameObj { id }
     }
 
     pub fn add_static(&mut self, comp: Arc<Mutex<dyn static_component::StaticComponent>>) {
