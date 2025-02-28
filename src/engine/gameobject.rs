@@ -100,7 +100,7 @@ pub struct GameObject {
 }
 
 impl GameObject {
-    pub fn new(
+    pub unsafe fn new(
         name: String,
         components: Vec<Arc<Mutex<component::ComponentWrapper>>>,
         state: GameObjectState,
@@ -340,7 +340,7 @@ impl GameObject {
 }
 
 pub fn make_base_game_object(name: String) -> Arc<Mutex<GameObject>> {
-    let g = GameObject::new(name, vec![], GameObjectState::new(true, None, vec![]));
+    let g = unsafe { GameObject::new(name, vec![], GameObjectState::new(true, None, vec![])) };
 
     let id = g.clone().lock().unwrap().id().clone();
     add_component(id, component::Transform::new());
@@ -463,7 +463,7 @@ pub fn add_component(object: i32, comp: Arc<Mutex<component::ComponentWrapper>>)
 pub fn has_component<T: component::ComponentTrait + 'static>(obj_id: i32) -> bool {
     let game_object = GameObject::find_by_id(obj_id).expect("No object found");
     let lock = game_object.lock().unwrap();
-    lock.has_component::<T>()
+    lock.has_component::<T>().clone()
 }
 
 #[cfg(test)]
@@ -479,7 +479,7 @@ mod tests {
         let name = "TestObject".to_string();
         let components = vec![];
         let state = GameObjectState::new(true, None, vec![]);
-        let game_object = GameObject::new(name.clone(), components, state);
+        let game_object = unsafe{ GameObject::new(name.clone(), components, state) };
 
         let game_object = game_object.lock().unwrap();
         assert_eq!(game_object.name(), name);

@@ -154,7 +154,7 @@ pub struct Engine {
 unsafe impl Send for Engine {}
 unsafe impl Sync for Engine {}
 
-struct ToLockGameObj {
+pub struct ToLockGameObj {
     id: i32
 }
 
@@ -317,7 +317,7 @@ impl Engine {
         ToLockGameObj { id }
     }
 
-    pub fn add_static(&mut self, comp: Arc<Mutex<dyn static_component::StaticComponent>>) {
+    pub unsafe fn add_static(&mut self, comp: Arc<Mutex<dyn static_component::StaticComponent>>) {
         self.state.add_static(comp);
     }
 

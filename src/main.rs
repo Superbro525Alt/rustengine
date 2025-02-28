@@ -99,7 +99,8 @@ impl Spawner {
         
         let enemy = e.add_object(make_base_game_object("enemy ".to_owned() + &self.enemies.len().to_string().to_owned()));
 
-        let mut lock = enemy.get().lock().unwrap();
+        let c = enemy.get();
+        let mut lock = c.lock().unwrap();
 
         lock.add_component(RenderComponent::new(Primitives::Octagon(0.1, [1.0, 0.0, 0.0])));
 
@@ -398,8 +399,8 @@ async fn run() {
         }
     );
 
-    // let (mut e, eventloop) =
-    //     engine::state::Engine::new(true, EventLoopBuilder::<()>::with_user_event().build()).await;
+    let (mut e, eventloop) =
+        engine::state::Engine::new(true, EventLoopBuilder::<()>::with_user_event().build()).await;
     //
     // let ship = e.add_object(gameobject::make_base_game_object(String::from("ship")));
     // let scorer = Score::new();
@@ -415,8 +416,8 @@ async fn run() {
     //
     // e.add_static(Spawner::new(ship, scorer_link));
 
-    let (mut e, eventloop) =
-        engine::state::Engine::import_from_json(String::from("{\"objects\":[{\"components\":[{\"id\":\"Transform\",\"data\":{\"pos\":[0.0,0.0,0.0],\"rot\":[0.0,0.0,0.0],\"state\":{\"_state\":null},\"uuid\":\"cd1961ab-38ba-4225-9cc6-f28747de0b7d\"}},{\"id\":\"CharacterController2D\",\"data\":{\"bounds\":{\"limits\":{\"x\":{\"x\":2.700000047683716},\"y\":{\"y\":2.0}}},\"moveamt\":0.009999999776482582,\"rotamt\":2.0,\"state\":{\"_state\":null},\"uuid\":\"99081038-f993-4231-bd17-8c2d5bbe8fdb\"}},{\"id\":\"RenderComponent\",\"data\":{\"name\":\"RenderComponent\",\"obj\":{\"Triangle\":[0.10000000149011612,[0.0,1.0,0.0]]},\"state\":{\"_state\":null},\"uuid\":\"eb875e37-31f7-4ec2-a76b-00c9c5e21d26\"}},{\"id\":\"BulletRenderer\",\"data\":{\"state\":{\"_state\":null},\"thickness\":0.009999999776482582,\"timeout_end\":null,\"to_set_thickness\":0.009999999776482582,\"uuid\":\"b1bb99b0-43b9-4fa0-9034-4a92a5eea954\"}},{\"id\":\"ShootComponent\",\"data\":{\"cooldown\":{\"nanos\":500000000,\"secs\":0},\"last_pressed\":null,\"scorer\":\"1d673e60-450c-4e0e-b928-10a5bdcfbf84\",\"state\":{\"_state\":null},\"uuid\":\"288d8d83-dd1b-4108-9b29-e9ecf915b791\"}}],\"colliders\":[{\"collider\":{\"CubeCollider\":{\"side_length\":0.1}}}],\"parent\":null,\"children\":[],\"id\":0,\"name\":\"ship\",\"active\":true}],\"static_components\":[{\"id\":\"Score\",\"data\":{\"over\":false,\"score\":0,\"uuid\":\"1d673e60-450c-4e0e-b928-10a5bdcfbf84\"}},{\"id\":\"Spawner\",\"data\":{\"cooldown\":{\"nanos\":500000000,\"secs\":0},\"enemies\":[],\"last_spawn\":null,\"moveamt\":1.0,\"player\":0,\"scorer\":\"1d673e60-450c-4e0e-b928-10a5bdcfbf84\",\"uuid\":\"d9ff7612-8330-46e8-aeb3-3ddf4454c452\"}}],\"graphics\":true}")).await;
+    // let (mut e, eventloop) =
+    //     engine::state::Engine::import_from_json(String::from("{\"objects\":[{\"components\":[{\"id\":\"Transform\",\"data\":{\"pos\":[0.0,0.0,0.0],\"rot\":[0.0,0.0,0.0],\"state\":{\"_state\":null},\"uuid\":\"cd1961ab-38ba-4225-9cc6-f28747de0b7d\"}},{\"id\":\"CharacterController2D\",\"data\":{\"bounds\":{\"limits\":{\"x\":{\"x\":2.700000047683716},\"y\":{\"y\":2.0}}},\"moveamt\":0.009999999776482582,\"rotamt\":2.0,\"state\":{\"_state\":null},\"uuid\":\"99081038-f993-4231-bd17-8c2d5bbe8fdb\"}},{\"id\":\"RenderComponent\",\"data\":{\"name\":\"RenderComponent\",\"obj\":{\"Triangle\":[0.10000000149011612,[0.0,1.0,0.0]]},\"state\":{\"_state\":null},\"uuid\":\"eb875e37-31f7-4ec2-a76b-00c9c5e21d26\"}},{\"id\":\"BulletRenderer\",\"data\":{\"state\":{\"_state\":null},\"thickness\":0.009999999776482582,\"timeout_end\":null,\"to_set_thickness\":0.009999999776482582,\"uuid\":\"b1bb99b0-43b9-4fa0-9034-4a92a5eea954\"}},{\"id\":\"ShootComponent\",\"data\":{\"cooldown\":{\"nanos\":500000000,\"secs\":0},\"last_pressed\":null,\"scorer\":\"1d673e60-450c-4e0e-b928-10a5bdcfbf84\",\"state\":{\"_state\":null},\"uuid\":\"288d8d83-dd1b-4108-9b29-e9ecf915b791\"}}],\"colliders\":[{\"collider\":{\"CubeCollider\":{\"side_length\":0.1}}}],\"parent\":null,\"children\":[],\"id\":0,\"name\":\"ship\",\"active\":true}],\"static_components\":[{\"id\":\"Score\",\"data\":{\"over\":false,\"score\":0,\"uuid\":\"1d673e60-450c-4e0e-b928-10a5bdcfbf84\"}},{\"id\":\"Spawner\",\"data\":{\"cooldown\":{\"nanos\":500000000,\"secs\":0},\"enemies\":[],\"last_spawn\":null,\"moveamt\":1.0,\"player\":0,\"scorer\":\"1d673e60-450c-4e0e-b928-10a5bdcfbf84\",\"uuid\":\"d9ff7612-8330-46e8-aeb3-3ddf4454c452\"}}],\"graphics\":true}")).await;
 
     // e.add_object(make_base_game_object("ok".to_owned()));
 

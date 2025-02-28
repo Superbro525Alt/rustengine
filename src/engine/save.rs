@@ -602,7 +602,7 @@ impl EngineSaveData {
         }
 
         for static_comp in self.static_components.iter_mut() {
-            engine.0.add_static(static_comp.to_static_component());
+            unsafe { engine.0.add_static(static_comp.to_static_component()) };
         }
 
         engine
@@ -643,7 +643,7 @@ impl GameObjectSaveData {
 
     pub fn to_game_object(&self) -> Arc<Mutex<GameObject>> {
         info!("Restoring game object from save data. Object ID: {}", self.id);
-        let obj = GameObject::new(self.name.clone(), vec![], GameObjectState::new(self.active, self.parent, self.children.clone()));
+        let obj = unsafe { GameObject::new(self.name.clone(), vec![], GameObjectState::new(self.active, self.parent, self.children.clone())) };
 
         for comp in &self.components {
             obj.lock().unwrap().add_component(comp.to_component());
